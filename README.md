@@ -9,13 +9,13 @@
 ## Example
 
 ```lua
-var name = "Solx"
+var name = "Solx" -- define a variable
 
-fn greet(player)
+fn greet(player) -- making a function
     print("Hello, {player}!")
 end
 
-greet(name)
+greet(name) -- calling a function
 ```
 
 Solx is in early development.
