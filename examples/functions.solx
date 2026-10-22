@@ -1,0 +1,24 @@
+fn add(a, b)
+    return a + b
+end
+
+print(add(10, 20))
+
+var multiplier = fn(x)
+    return x * 2
+end
+
+print(multiplier(5))
+
+fn makeCounter()
+    var count = 0
+
+    return fn()
+        count = count + 1
+        return count
+    end
+end
+
+var counter = makeCounter()
+print(counter())
+print(counter())

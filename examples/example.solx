@@ -1,68 +1,19 @@
+global score = 50
+score = score + 25
 
--- Solx basics
--- Variables, functions, loops, lists, objects and errors
-
-var player = "Jinx"
-var score = 100
-const maxScore = 500
-
-print("Welcome, {player}!")
-print("Score: " .. score)
-
--- Functions
-fn add(a, b)
-    return a + b
+if score >= 75 then
+    print("Passed")
+else
+    print("Try again")
 end
 
-fn greet(name)
-    print("Hello, {name}!")
-end
+global items = ["Sword", "Shield"]
+print(items[1])
 
-greet(player)
-
-var result = add(score, 50)
-print("New score: {result}")
-
--- Lists use 1-based indexing
-var inventory = {"Sword", "Shield", "Potion"}
-
-print("First item: {inventory[1]}")
-
--- Objects
-var character = {
+global player = {
     name = "Jinx",
-    level = 10,
-    active = true
+    score = score
 }
 
-print("Character: {character.name}")
-print("Level: {character.level}")
-
--- Loops
-for i = 1, 5 do
-    print("Round {i}")
-end
-
-var count = 3
-
-while count > 0 do
-    print(count)
-    count = count - 1
-end
-
--- Conditions
-if score >= 100 then
-    print("High score!")
-elseif score > 0 then
-    print("Keep going!")
-else
-    print("Start playing!")
-end
-
--- Error handling
-try
-    var answer = 10 / 0
-    print(answer)
-catch err
-    print("Something went wrong: " .. str(err))
-end
+print(player.name)
+print(str(player.score))

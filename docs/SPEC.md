@@ -285,6 +285,11 @@ Accessing a missing object property produces a warning and returns
 
 ## 10. Functions
 
+The tree-walk interpreter currently implements named and anonymous
+functions, exact argument counts, lexical closures, recursion, and a
+single return value. Run `cargo run -- examples/functions.solx` for an
+example that prints `30`, `10`, `1`, and `2` on separate lines.
+
 ### 10.1 Named functions
 
 ``` lua
@@ -304,12 +309,41 @@ end
 `fn` is the only function syntax in the initial design. Arrow functions
 are not included.
 
+Named declarations bind in the current scope, using the same redeclaration
+and constant checks as `var`. Functions are values: they can be passed as
+arguments, returned, and stored in lists or objects. The existing `print`,
+`str`, and `num` built-ins are callable values and follow normal name
+shadowing. `Function` is accepted as a variable type annotation.
+
+Parameters are distinct, unannotated names. Zero parameters and zero
+arguments are supported. Calls evaluate the callee first, then each
+argument once from left to right in the caller's scope. User functions
+require exactly their declared number of arguments; `print` remains
+variadic. Function parameter and return type annotations are deferred.
+
 ### 10.3 Closures
 
 Closures are supported. A function retains access to variables from its
 enclosing lexical scope even after that scope has finished.
 
+Each call gets a fresh scope for parameters and locals, enclosing the
+function's captured scopes. Caller locals are not visible to the callee.
+Sibling closures share captured bindings; separate calls create separate
+locals. Existing `if` branches still introduce scopes. Captured bindings
+retain their constant, type annotation, and nil-assignment checks.
+Function equality compares identity, including when functions appear in
+collections.
+
+The current implementation shares scopes through `Rc<RefCell<...>>`.
+Reference cycles between functions and their environments are not yet
+collected and can retain memory. Recursion uses the Rust call stack;
+tail-call optimisation and a garbage collector are not implemented.
+
 ### 10.4 Multiple return values
+
+This section describes planned behaviour. The current interpreter rejects
+multiple-value returns with a diagnostic; multiple-variable binding is
+also not implemented yet.
 
 Functions can return multiple values, and callers can bind them to
 multiple variables.
@@ -325,6 +359,16 @@ var score, health = getStats()
 ### 10.5 Implicit return
 
 A function that finishes without an explicit `return` produces `nil`.
+
+A bare `return` also produces `nil`. A newline immediately after `return`
+ends the statement; start a return expression on the same line as the
+keyword. Returns exit through nested `if` branches, and top-level returns
+are rejected with a source-positioned parse error.
+
+The existing binding behaviour is preserved: declarations (including
+parameter binding) can initially hold `nil`, while assigning a nil result
+to an existing untyped variable deletes that binding. Constants and type
+annotations are checked before assignment or deletion.
 
 The exact interaction of multiple returns with expressions, argument
 evaluation, and the special deletion semantics of `nil` remains to be
