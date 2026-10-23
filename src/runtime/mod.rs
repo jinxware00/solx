@@ -2,6 +2,7 @@ mod collection_ops;
 pub mod environment;
 pub mod error;
 mod gc;
+pub(crate) mod numeric;
 pub mod value;
 
 pub use environment::Environment;

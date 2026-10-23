@@ -133,7 +133,7 @@ impl Environment {
             .chain(std::iter::once(&self.globals))
         {
             let mut scope = scope.borrow_mut();
-            if let Some(binding) = scope.get(name) {
+            if let Some(binding) = scope.get_mut(name) {
                 if binding.constant {
                     return Err(RuntimeError::new(format!(
                         "cannot reassign constant '{name}'"
@@ -142,11 +142,7 @@ impl Environment {
 
                 Self::check_type(name, &value, binding.type_annotation.as_deref())?;
 
-                if matches!(value, Value::Nil) {
-                    scope.remove(name);
-                } else {
-                    scope.get_mut(name).expect("binding exists").value = value.tracked();
-                }
+                binding.value = value.tracked();
 
                 return Ok(());
             }
@@ -171,7 +167,7 @@ impl Environment {
         };
 
         let compatible = match expected {
-            "Number" => matches!(value, Value::Number(_)),
+            "Number" => matches!(value, Value::Integer(_) | Value::Number(_)),
             "String" => matches!(value, Value::String(_)),
             "Boolean" => matches!(value, Value::Boolean(_)),
             "List" => matches!(value, Value::List(_)),
@@ -237,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn nil_assignment_removes_a_binding() {
+    fn nil_assignment_retains_a_writable_binding() {
         let mut env = Environment::new();
 
         env.define("score".into(), Value::Number(50.0), false, None, false)
@@ -245,7 +241,9 @@ mod tests {
 
         env.assign("score", Value::Nil).unwrap();
 
-        assert!(env.get("score").is_err());
+        assert_eq!(env.get("score").unwrap(), Value::Nil);
+        env.assign("score", Value::Number(75.0)).unwrap();
+        assert_eq!(env.get("score").unwrap(), Value::Number(75.0));
     }
 
     #[test]

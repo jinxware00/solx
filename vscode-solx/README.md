@@ -16,7 +16,7 @@ live syntax diagnostics, completions, construct snippets, and API documentation 
 - **Snippets** for named/anonymous functions, conditionals, numeric/while
   loops, `try`/`catch`, imports, and variable declarations. Trigger suggestions with Ctrl+Space.
 - **Hover documentation** for recognized built-ins and the `core`, `math`,
-  `string`, `list`, and `object` APIs, including signatures and constraints.
+  `string`, `list`, `object`, and `json` APIs, including signatures and constraints.
 - **Syntax highlighting**, `--` line comments, bracket matching, and automatic
   bracket/quote closing and surrounding.
 
@@ -36,11 +36,11 @@ end
 ## Install locally
 
 Requires VS Code 1.85 or later. This extension has not been published to the
-Marketplace. Build or obtain `solx-language-support-0.3.1.vsix`, then use
+Marketplace. Build or obtain `solx-language-support-0.4.0.vsix`, then use
 **Extensions: Install from VSIX...**, or:
 
 ```sh
-code --install-extension solx-language-support-0.3.1.vsix
+code --install-extension solx-language-support-0.4.0.vsix
 ```
 
 The extension identifier is `jinxware00.solx-language-support`. If you
@@ -52,9 +52,9 @@ Studio Code** prompt defaults to yes when supported VS Code is found.
 You can decline and install the VSIX later. Restart VS Code after installing
 Solx so it receives the updated PATH. See the repository's
 [installation guide](https://github.com/jinxware00/solx/blob/main/docs/INSTALLING.md).
-Earlier installer ZIPs still contain older binaries/VSIX files. For the new
-diagnostics, use this VSIX with a matching source-built interpreter; the ZIP
-has not been rebuilt as part of this extension change.
+Use a current source build of Solx 0.2 with this extension. Earlier installer
+ZIPs contain older binaries and VSIX files; a standalone extension update does
+not update those bundles or an installed interpreter.
 
 ## Configure the interpreter
 
@@ -183,9 +183,8 @@ CLI schema is documented in the repository's
 
 The `try` snippet creates a handler that prints `err.message`. Catch bindings
 and the separate try/catch scopes are respected when recognizing APIs. These
-keywords require an interpreter built from the current source checkout;
-the earlier packaged 0.1.0 interpreter does not implement them. Use Cargo
-mode while developing this unreleased language change.
+keywords require a current interpreter. JSON completion/hover and the updated
+nil/number reference target Solx 0.2; use Cargo mode for source development.
 
 The existing grammar also styles simple double-quoted `{name}` placeholders,
 but string interpolation remains unimplemented and is not offered as a

@@ -3,7 +3,7 @@ use crate::runtime::{Value, read_collection};
 
 pub(super) const FUNCTIONS: &[LibraryFunction] = &[
     LibraryFunction::fixed("string.len", 1, |a| {
-        Ok(Value::Number(a.string(0)?.chars().count() as f64))
+        Ok(crate::runtime::numeric::count(a.string(0)?.chars().count()))
     }),
     LibraryFunction::fixed("string.upper", 1, |a| {
         Ok(Value::String(a.string(0)?.to_uppercase()))
@@ -40,7 +40,7 @@ fn find(args: &Arguments<'_>) -> NativeResult {
     let text = args.string(0)?;
     let needle = args.string(1)?;
     Ok(text.find(needle).map_or(Value::Nil, |offset| {
-        Value::Number((text[..offset].chars().count() + 1) as f64)
+        crate::runtime::numeric::count(text[..offset].chars().count() + 1)
     }))
 }
 

@@ -5,6 +5,10 @@
 Solx is a small, Lua-inspired language implemented in Rust. It supports
 functions and closures, lists and objects, loops, explicit module imports,
 and `try`/`catch` with structured runtime errors.
+Version 0.2 adds storable `nil`, exact checked 64-bit integers within `Number`,
+and an explicitly imported [JSON module](docs/JSON.md). Read the
+[nil migration](docs/NIL_MIGRATION.md) and [numeric rules](docs/NUMBERS.md)
+when updating programs from 0.1.
 It is in early development; see the [specification](docs/SPEC.md) for the
 distinction between implemented behavior and planned features.
 The [language review](docs/LANGUAGE_REVIEW.md) records current gaps, lessons

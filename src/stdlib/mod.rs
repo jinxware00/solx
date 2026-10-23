@@ -2,6 +2,7 @@
 
 mod collections;
 mod core;
+mod json;
 mod math;
 mod strings;
 
@@ -101,21 +102,24 @@ impl<'a> Arguments<'a> {
     }
 
     fn number(&self, index: usize) -> Result<f64, RuntimeError> {
-        let Value::Number(number) = self.values[index] else {
+        if !crate::runtime::numeric::is_number(&self.values[index]) {
             return Err(self.wrong_type(index, "Number"));
-        };
-        if !number.is_finite() {
+        }
+        if matches!(self.values[index], Value::Number(number) if !number.is_finite()) {
             return Err(self.error(index, "must be finite"));
         }
-        Ok(number)
+        crate::runtime::numeric::exact_float(&self.values[index], self.name)
     }
 
     fn integer(&self, index: usize, min: usize, max: usize) -> Result<usize, RuntimeError> {
-        let number = self.number(index)?;
-        if number.fract() != 0.0 || number < min as f64 || number > max as f64 {
-            return Err(self.error(index, &format!("must be an integer in {min}..{max}")));
+        if !crate::runtime::numeric::is_number(&self.values[index]) {
+            return Err(self.wrong_type(index, "Number"));
         }
-        Ok(number as usize)
+        if matches!(self.values[index], Value::Number(number) if !number.is_finite()) {
+            return Err(self.error(index, "must be finite"));
+        }
+        crate::runtime::numeric::index(&self.values[index], min, max)
+            .ok_or_else(|| self.error(index, &format!("must be an integer in {min}..{max}")))
     }
 
     fn list(&self, index: usize) -> Result<&'a List, RuntimeError> {
@@ -177,12 +181,11 @@ pub(crate) fn call(function: NativeFunction, values: &[Value]) -> NativeResult {
         NativeFunction::Num => {
             check_arity(name, values, 1, 1)?;
             match &values[0] {
-                Value::Number(number) => Ok(Value::Number(*number)),
-                Value::String(text) => {
-                    text.trim().parse::<f64>().map(Value::Number).map_err(|_| {
-                        RuntimeError::new(format!("cannot convert '{text}' to Number"))
-                    })
+                Value::Integer(number) => Ok(Value::Integer(*number)),
+                Value::Number(number) => {
+                    crate::runtime::numeric::finite(*number).map(Value::Number)
                 }
+                Value::String(text) => crate::runtime::numeric::parse(text),
                 other => Err(RuntimeError::new(format!(
                     "num() cannot convert {} to Number",
                     other.type_name()
@@ -195,6 +198,7 @@ pub(crate) fn call(function: NativeFunction, values: &[Value]) -> NativeResult {
 pub(crate) fn module(name: &str) -> Option<Value> {
     let functions = match name {
         "core" => core::FUNCTIONS,
+        "json" => json::FUNCTIONS,
         "math" => math::FUNCTIONS,
         "string" => strings::FUNCTIONS,
         "list" => collections::LIST_FUNCTIONS,

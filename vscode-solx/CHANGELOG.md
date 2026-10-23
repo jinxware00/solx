@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+- Add completion and hover for the explicitly imported `json` module.
+- Update reference documentation for Solx 0.2's storable nil and exact checked
+  integer arithmetic. These language features require a matching interpreter.
+- Retain the Windows checker snapshot transport and cleanup from 0.3.1.
+
 ## 0.3.1 (local package; unpublished)
 
 - Avoid the measured Windows stdin startup delay by checking temporary buffer

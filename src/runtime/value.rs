@@ -83,6 +83,8 @@ impl ModuleValue {
 pub enum Value {
     Nil,
     Boolean(bool),
+    /// Exact signed integer; exposed to Solx as Number, like the decimal variant.
+    Integer(i64),
     Number(f64),
     String(String),
     List(Rc<RefCell<Vec<Value>>>),
@@ -112,7 +114,7 @@ impl Value {
         match self {
             Self::Nil => "Nil",
             Self::Boolean(_) => "Boolean",
-            Self::Number(_) => "Number",
+            Self::Integer(_) | Self::Number(_) => "Number",
             Self::String(_) => "String",
             Self::List(_) => "List",
             Self::Object(_) => "Object",
@@ -133,6 +135,7 @@ impl Value {
         match self {
             Self::Nil => "nil".to_owned(),
             Self::Boolean(value) => value.to_string(),
+            Self::Integer(value) => value.to_string(),
             Self::Number(value) => {
                 if value.is_finite() && value.fract() == 0.0 && value.abs() < 1e16 {
                     format!("{value:.0}")
@@ -151,8 +154,11 @@ impl Value {
         }
     }
 
+    /// Returns an approximate f64 for host compatibility. Match Integer directly
+    /// when exact integer bits matter; Solx arithmetic uses checked conversions.
     pub fn as_number(&self) -> Option<f64> {
         match self {
+            Self::Integer(value) => Some(*value as f64),
             Self::Number(value) => Some(*value),
             _ => None,
         }

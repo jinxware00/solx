@@ -3,9 +3,13 @@ const entry = (signature, description, kind = 'Function') => ({ signature, descr
 const builtins = {
   print: entry('print(...)', 'Prints tab-separated values and a newline. Zero arguments print a blank line. Returns nil.'),
   str: entry('str(value)', 'Converts one value to its Solx text representation.'),
-  num: entry('num(value)', 'Accepts one Number or a trimmed numeric String. Invalid strings and other types raise an error.'),
+  num: entry('num(value)', 'Accepts one Number or a trimmed numeric String. Integer forms preserve signed 64-bit values; decimal/exponent forms use finite binary64. Invalid strings, overflow, nonfinite values and other types raise an error.'),
 };
 const modules = {
+  json: {
+    parse: entry('json.parse(text)', 'Parses one JSON String. Null becomes nil; integer tokens retain signed 64-bit precision. Rejects invalid JSON and unsafe numbers. Limited to 1 MiB UTF-8 and 64 container levels.'),
+    stringify: entry('json.stringify(value)', 'Returns compact JSON with sorted object keys. Preserves nil as null. Rejects cycles, functions/modules, nonfinite numbers and unavailable borrows. Limited to 1 MiB UTF-8 and 64 container levels.'),
+  },
   core: {
     type: entry('core.type(value)', 'Returns the annotation-style type name, including Nil, Function, and Module.'),
     assert: entry('core.assert(condition[, message])', 'Returns the condition if truthy; otherwise raises an assertion error. Optional message must be a String, even on success. Only false and nil are falsey.'),
@@ -55,7 +59,7 @@ const keywords = {
   break: 'Exit the nearest loop in this function.', continue: 'Continue the nearest loop in this function.',
   return: 'Return one value, or nil when bare, from a function.', import: 'Import an explicit built-in module or .solx file.',
   and: 'Logical conjunction.', or: 'Logical disjunction.', not: 'Logical negation.',
-  true: 'Boolean true.', false: 'Boolean false.', nil: 'Nil; assignment to an existing untyped variable deletes its binding.',
+  true: 'Boolean true.', false: 'Boolean false.', nil: 'A storable absence value. Assignment retains the binding; collection entries require explicit removal.',
 };
 const types = ['Number', 'String', 'Boolean', 'List', 'Object', 'Module', 'Function', 'Nil'];
 module.exports = { builtins, modules, keywords, types };

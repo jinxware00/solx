@@ -111,8 +111,9 @@ explicitly through the module's `exports` object (section 13).
 const pi = 3.14159
 ```
 
-The exact behaviour of mutating a collection held by a constant still
-needs to be specified.
+Constants protect bindings, not collection contents. Lists and objects held by
+a constant can be mutated through the existing collection operations. Deep
+immutability is not implemented.
 
 ### 4.4 Lexical scope and shadowing
 
@@ -126,25 +127,25 @@ Reading an undeclared variable triggers a warning and then an error when
 its value is actually used. A spelling mistake should not silently
 become a new variable.
 
-## 5. `nil` and deletion
+## 5. `nil` and absence
 
-Assigning `nil` to a variable removes that variable's binding from its
-current scope.
+`nil` is a storable value. Assigning it updates the selected binding without
+removing that binding or exposing a shadowed outer variable. This changes the
+earlier 0.1 behavior; see [migration guidance](NIL_MIGRATION.md).
 
 ``` lua
 var score = 100
 score = nil
+print(score == nil) -- true
+score = 200 -- the binding still exists
 ```
 
-After this assignment, reading `score` follows the undeclared-variable
-behaviour: warn, then error when the value is used.
-
-**Important consequence:** under this rule, `nil` is a deletion
-mechanism rather than a value that can remain stored in a variable. This
-is a deliberate departure from Lua and needs careful implementation,
-especially for optional typed variables, collection entries, function
-results, and missing-property handling. The interaction of these cases
-is still unresolved.
+Declarations, parameters, function results, variables, and collection entries
+can all hold nil. Assignment to an undeclared name still errors. Constants and
+annotations are checked before assignments; non-Nil annotations reject nil.
+Use an unannotated variable for a value that may be nil. There is no variable
+deletion statement. `object.remove` and `list.remove` explicitly remove
+collection entries; assigning nil to an entry preserves the entry.
 
 ## 6. Types and values
 
@@ -161,9 +162,14 @@ value = true
 
 ### 6.2 Number
 
-Solx has one language-level `Number` type for integers and decimals. The
-runtime may use different internal representations or optimisations,
-provided the observable behaviour is consistent.
+Solx has one language-level `Number` type with signed 64-bit integer and finite
+binary64 decimal representations. Literals and numeric strings without a
+decimal point or exponent must fit i64 and retain every integer digit. Decimal
+or exponent forms use binary64. Integer arithmetic is checked; overflow,
+division by zero, nonfinite results, and nonzero underflow to zero are errors.
+Mixed arithmetic and `/` reject integer-to-decimal conversions that lose bits.
+Comparisons handle mixed representations exactly. Full operator rules and
+compatibility changes are in [NUMBERS.md](NUMBERS.md).
 
 ### 6.3 Optional type annotations
 
@@ -181,9 +187,10 @@ var active: Boolean = true
 -   Type annotations may provide information for optimisation, but no
     performance benefit is assumed without benchmarks.
 
-The complete type grammar, supported types, function parameter/return
-annotations, and the interaction between annotations and `nil` remain
-unresolved.
+Supported variable annotations are `Number`, `String`, `Boolean`, `List`,
+`Object`, `Module`, `Function`, and `Nil`; the latter accepts only nil.
+There are no optional/union types or function parameter/return annotations yet.
+Both integer and decimal representations satisfy `Number`.
 
 ### 6.4 Truthiness
 
@@ -279,8 +286,8 @@ Accessing a missing object property produces a warning and returns
     errors or missing-index warnings.
 -   Whether list/object assignment can create new entries or replace
     existing ones in every case.
--   How `nil` behaves when assigned to an object property or list slot,
-    given that variable assignment of `nil` deletes the binding.
+-   Future optional-value and deep-immutability APIs. Nil assignment currently
+    retains both variable bindings and collection entries.
 -   Collection mutation methods and standard operations.
 -   Equality and length semantics for lists and objects.
 
@@ -435,14 +442,11 @@ ends the statement; start a return expression on the same line as the
 keyword. Returns exit through nested `if` branches, and top-level returns
 are rejected with a source-positioned parse error.
 
-The existing binding behaviour is preserved: declarations (including
-parameter binding) can initially hold `nil`, while assigning a nil result
-to an existing untyped variable deletes that binding. Constants and type
-annotations are checked before assignment or deletion.
+Declarations, parameter bindings, and assignments can retain nil results.
+Constants and type annotations are checked before assignment.
 
-The exact interaction of multiple returns with expressions, argument
-evaluation, and the special deletion semantics of `nil` remains to be
-defined.
+The interaction of future multiple returns with expressions and argument
+evaluation remains to be defined; nil itself has ordinary value semantics.
 
 ## 11. Loops
 
@@ -475,12 +479,13 @@ bounds run once with either step direction. For example, `for i = 5, 1,
 Each iteration has a fresh local scope and loop-variable binding.
 Closures retain the binding of the iteration that created them; they
 still share variables captured from outside the loop. The loop variable
-shadows an enclosing name and is not visible after the loop. Assigning,
-redeclaring, or deleting that visible binding uses the existing variable
+shadows an enclosing name and is not visible after the loop. Assigning or
+redeclaring that visible binding uses the existing variable
 rules and does not change the internal counter or saved bounds.
 
-The current Number representation uses floating-point arithmetic, so
-fractional steps may round. If an increment rounds back to the same
+All-integer headers use exact checked integer counters. Other headers use
+decimal counters and reject lossy integer conversions. Fractional steps may
+round. If an increment rounds back to the same
 counter before reaching the limit, execution reports `for loop step
 does not advance the counter`. An increment that overflows past finite
 bounds ends the loop; nonfinite header values are rejected.
@@ -785,15 +790,15 @@ and a capability model for untrusted code.
 `print(...)` prints tab-separated values plus a newline
 and returns nil; zero arguments print a blank line. `str(value)` accepts
 one value and uses the existing Solx formatting. `num(value)` accepts one
-Number or a trimmed numeric String, including the existing nonfinite
-number conversions; other types and invalid strings error. All three
-remain global, first-class, and shadowable, with unchanged diagnostics.
+Number or a trimmed numeric String using section 6.2's checked numeric rules;
+other types, invalid strings, nonfinite numbers and out-of-range integer
+strings error. All three remain global, first-class, and shadowable.
 There are no duplicate namespaced conversion aliases.
 
-The interpreter implements the five native modules below and the file
-imports in section 13. JSON, randomness, filesystem/process utilities,
-try/catch, and pcall remain deferred. No dependencies beyond the existing
-CLI dependency are added. Run `cargo run -- examples/modules/main.solx`
+The interpreter implements the six native modules below and the file
+imports in section 13. JSON and try/catch are implemented. Randomness,
+filesystem/process utilities and pcall remain deferred.
+Run `cargo run -- examples/modules/main.solx`
 for a two-file example that combines native APIs and a pure Solx utility.
 
 ### 14.2 Standard module API
@@ -809,6 +814,8 @@ left to right, before validation, following ordinary calls.
 | `core` | `type(value)` | Returns the annotation-style type name, including Nil, Function, and Module. |
 | `core` | `assert(condition[, message])` | Uses Solx truthiness; returns the condition on success, otherwise raises an error. Optional message must be String, even on success. |
 | `core` | `error(message)` | Raises a runtime error with the supplied String. |
+| `json` | `parse(text)` | Parse one JSON String into Solx values, preserving null as nil and signed i64 integers exactly. See [JSON.md](JSON.md) for numeric, duplicate-key and size/depth rules. |
+| `json` | `stringify(value)` | Compact JSON with deterministic sorted object keys. Rejects cycles, nonfinite numbers, functions/modules, unavailable borrows and size/depth limits; does not mutate input. |
 | `math` | `abs(x)`, `sqrt(x)`, `floor(x)`, `ceil(x)`, `round(x)` | Finite Number inputs; sqrt rejects negative numbers. Round uses nearest integer, halves away from zero. |
 | `math` | `min(...)`, `max(...)` | One or more finite Numbers. |
 | `math` | `pi` | Number constant. |
@@ -831,9 +838,9 @@ left to right, before validation, following ordinary calls.
 Lengths and indexes are Numbers. Collection helpers mutate shared
 collections even when held by a constant, matching existing property and
 index assignment: const protects a binding, not its contents. Assigning
-nil to variables still deletes bindings; nil in collections remains an
-entry until explicitly removed. Existing arithmetic, conversions, and
-acyclic equality are unchanged; cyclic formatting and structural equality
+nil preserves variable bindings and collection entries. Collection entries
+remain until explicitly removed. Arithmetic and numeric comparison follow
+section 6.2; cyclic formatting and structural equality
 follow section 9.4.
 
 Random generation is deferred until seeding, reproducibility, generator
@@ -929,7 +936,7 @@ unimplemented. See [the language review](LANGUAGE_REVIEW.md) for current gaps.
 -   [x] Missing list indexes warn and return `nil`.
 -   [x] Missing object properties warn and return `nil`.
 -   [x] Dot and bracket object access.
--   [x] Assigning `nil` removes a variable binding.
+-   [x] Nil is storable in bindings and collection entries.
 -   [x] Named and anonymous `fn` functions; no arrow functions
     initially.
 -   [x] Closures and multiple return values.
@@ -949,9 +956,8 @@ unimplemented. See [the language review](LANGUAGE_REVIEW.md) for current gaps.
 
 ## 19. Unresolved decisions
 
-These are intentionally not treated as settled: 1. Exact representation
-and behaviour of `nil` in expressions, returns, collections, and typed
-variables, given that assigning `nil` to a variable removes its binding.
+These are intentionally not treated as settled: 1. Optional/union annotation
+syntax and future multiple-result behavior; nil storage itself is settled.
 2. Complete type system: supported type names, annotation grammar,
 function signatures, compatibility rules, and error timing. 3. String
 interpolation escaping and multiline-string syntax. 4. Equality rules

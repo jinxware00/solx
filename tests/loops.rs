@@ -106,21 +106,21 @@ fn for_header_is_evaluated_once_left_to_right_before_counter_binding() {
 }
 
 #[test]
-fn changing_or_deleting_visible_counter_does_not_change_iteration() {
+fn assigning_nil_to_visible_counter_preserves_shadowing_and_iteration() {
     let interpreter = run(r#"
         var i = 50
         global total = 0
-        global unmasked = 0
+        global cleared = 0
         for i = 1, 3 do
             total = total + i
             i = nil
-            unmasked = unmasked + i
+            if i == nil then cleared = cleared + 1 end
             var i = "local"
         end
         global outer = i
         "#);
     assert_number(&interpreter, "total", 6.0);
-    assert_number(&interpreter, "unmasked", 150.0);
+    assert_number(&interpreter, "cleared", 3.0);
     assert_number(&interpreter, "outer", 50.0);
 }
 
@@ -275,9 +275,9 @@ fn invalid_for_bounds_report_errors_before_executing_the_body() {
         ("1, 3, nil", "for loop step requires Number, got Nil"),
         ("1, 3, 0", "for loop step must not be zero"),
         ("1, 3, -0", "for loop step must not be zero"),
-        ("1 / 0, 3", "for loop start must be finite"),
-        ("1, 0 / 0", "for loop limit must be finite"),
-        ("1, 3, -1 / 0", "for loop step must be finite"),
+        ("1 / 0, 3", "division by zero"),
+        ("1, 0 / 0", "division by zero"),
+        ("1, 3, -1 / 0", "division by zero"),
         ("3, 1, 0", "for loop step must not be zero"),
     ] {
         let mut interpreter = run("global entered = false var i = 9");

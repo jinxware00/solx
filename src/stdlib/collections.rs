@@ -1,10 +1,10 @@
 use super::{Arguments, LibraryFunction, NativeResult};
-use crate::runtime::{Value, read_collection, write_collection};
+use crate::runtime::{Value, numeric, read_collection, write_collection};
 
 pub(super) const LIST_FUNCTIONS: &[LibraryFunction] = &[
     LibraryFunction::fixed("list.len", 1, |a| {
-        Ok(Value::Number(
-            read_collection(a.list(0)?, "list.len()")?.len() as f64,
+        Ok(numeric::count(
+            read_collection(a.list(0)?, "list.len()")?.len(),
         ))
     }),
     LibraryFunction::fixed("list.append", 2, append),
@@ -43,20 +43,20 @@ fn find(args: &Arguments<'_>) -> NativeResult {
     Ok(items
         .iter()
         .position(|item| item == &args.values[1])
-        .map_or(Value::Nil, |index| Value::Number((index + 1) as f64)))
+        .map_or(Value::Nil, |index| numeric::count(index + 1)))
 }
 
 fn sort(args: &Arguments<'_>) -> NativeResult {
     let mut items = write_collection(args.list(0)?, "list.sort()")?;
     let numbers = items
         .iter()
-        .all(|v| matches!(v, Value::Number(n) if n.is_finite()));
+        .all(|v| matches!(v, Value::Integer(_)) || matches!(v, Value::Number(n) if n.is_finite()));
     let strings = items.iter().all(|v| matches!(v, Value::String(_)));
     if !numbers && !strings {
         return Err(args.error(0, "must contain only finite Numbers or only Strings"));
     }
     items.sort_by(|a, b| match (a, b) {
-        (Value::Number(a), Value::Number(b)) => a.partial_cmp(b).expect("validated finite numbers"),
+        (a, b) if numbers => numeric::compare(a, b).expect("validated finite numbers"),
         (Value::String(a), Value::String(b)) => a.cmp(b),
         _ => unreachable!("validated uniform list"),
     });

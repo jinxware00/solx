@@ -2,7 +2,7 @@
   "name": "solx-language-support",
   "displayName": "Solx Language Support",
   "description": "Syntax highlighting, live syntax diagnostics, run commands, completions, and hover documentation for Solx.",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "publisher": "jinxware00",
   "author": {
     "name": "jinxware00",

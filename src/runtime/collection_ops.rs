@@ -81,6 +81,7 @@ pub(super) fn format(value: &Value, debug: bool) -> String {
                 match value {
                     Value::Nil => "Nil".into(),
                     Value::Boolean(value) => format!("Boolean({value:?})"),
+                    Value::Integer(value) => format!("Integer({value})"),
                     Value::Number(value) => format!("Number({value:?})"),
                     Value::String(value) => format!("String({value:?})"),
                     Value::Function(value) => format!("Function({value:?})"),
@@ -130,7 +131,10 @@ pub(super) fn equal(left: &Value, right: &Value) -> bool {
         match (left, right) {
             (Value::Nil, Value::Nil) => {}
             (Value::Boolean(a), Value::Boolean(b)) if a == b => {}
-            (Value::Number(a), Value::Number(b)) if a == b => {}
+            (ref a, ref b)
+                if super::numeric::is_number(a)
+                    && super::numeric::is_number(b)
+                    && super::numeric::compare(a, b) == Some(std::cmp::Ordering::Equal) => {}
             (Value::String(a), Value::String(b)) if a == b => {}
             (Value::Function(a), Value::Function(b)) if Rc::ptr_eq(&a, &b) => {}
             (Value::NativeFunction(a), Value::NativeFunction(b)) if a == b => {}

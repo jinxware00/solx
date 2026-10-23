@@ -46,18 +46,22 @@ After the VSIX passes `test:package`, run from the repository root:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-files.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-build.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/build.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-install.ps1 -CodeRoot 'path\to\Microsoft VS Code'
 ```
 
-The build checks the VSIX identity and the hash recorded by its successful
-packaged host test, rebuilds the interpreter, then creates
-`dist/solx-0.1.0-windows-x64.zip` plus a JSON provenance/hash record. The ZIP
+The build checks the VSIX identity, the successful packaged-host receipt, and
+every packaged file against current source bytes. It rebuilds the interpreter,
+then creates `dist/solx-0.2.0-windows-x64.zip` plus a JSON provenance/hash record. The ZIP
 contains the terminal scripts, executable, VSIX, official PNG, MIT license,
 installation guide, and checksums. Scripts download nothing. The standalone
 VSIX follows the extension version, currently
-`vscode-solx/solx-language-support-0.3.1.vsix`. Existing ZIPs may still contain
-0.2.1 until rebuilt and validated; a new standalone VSIX does not update them.
+`vscode-solx/solx-language-support-0.4.0.vsix`. Earlier ZIPs retain their older
+contents; rebuilding a standalone VSIX does not update them. The schema-v2
+provenance records source/payload hashes and tool versions. Replacing a bundle
+preserves its previous bytes and provenance under `dist/history` first.
+See [CI and build validation](CI.md) for automated checks and their limits.
 
 `test.ps1` covers discovery and CLI argument/failure handling. `test-files.ps1`
 covers PATH edits, checksum validation, rollback, and backups. `test-install.ps1`

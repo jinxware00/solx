@@ -404,26 +404,34 @@ impl Interpreter {
         let limit = self.evaluate(limit)?;
         let step = match step {
             Some(expression) => self.evaluate(expression)?,
-            None => Value::Number(1.0),
+            None => Value::Integer(1),
         };
-        let mut counter = self.require_finite_number(&start, "for loop start")?;
-        let limit = self.require_finite_number(&limit, "for loop limit")?;
-        let step = self.require_finite_number(&step, "for loop step")?;
-        if step == 0.0 {
+        use crate::runtime::numeric;
+        let (mut counter, limit, step) = if matches!(
+            (&start, &limit, &step),
+            (Value::Integer(_), Value::Integer(_), Value::Integer(_))
+        ) {
+            (start, limit, step)
+        } else {
+            (
+                Value::Number(numeric::exact_float(&start, "for loop start")?),
+                Value::Number(numeric::exact_float(&limit, "for loop limit")?),
+                Value::Number(numeric::exact_float(&step, "for loop step")?),
+            )
+        };
+        if numeric::compare(&step, &Value::Integer(0)) == Some(std::cmp::Ordering::Equal) {
             return Err(RuntimeError::new("for loop step must not be zero"));
         }
-
-        while if step > 0.0 {
-            counter <= limit
-        } else {
-            counter >= limit
-        } {
+        let ascending = numeric::compare(&step, &Value::Integer(0)).is_some_and(|o| o.is_gt());
+        while numeric::compare(&counter, &limit)
+            .is_some_and(|o| if ascending { !o.is_gt() } else { !o.is_lt() })
+        {
             self.control.step()?;
             // A new binding per iteration keeps escaped closures independent.
             self.environment.begin_scope();
             let result = self
                 .environment
-                .define(name.to_owned(), Value::Number(counter), false, None, false)
+                .define(name.to_owned(), counter.clone(), false, None, false)
                 .and_then(|()| self.execute_statements(body));
             self.environment.end_scope();
             crate::runtime::maybe_collect();
@@ -436,7 +444,21 @@ impl Interpreter {
             if counter == limit {
                 break;
             }
-            let next = counter + step;
+            // An overflow while advancing is necessarily beyond the finite limit.
+            let next = match (&counter, &step) {
+                (Value::Integer(a), Value::Integer(b)) => match a.checked_add(*b) {
+                    Some(next) => Value::Integer(next),
+                    None => break,
+                },
+                (Value::Number(a), Value::Number(b)) => {
+                    let next = a + b;
+                    if !next.is_finite() {
+                        break;
+                    }
+                    Value::Number(next)
+                }
+                _ => unreachable!("loop representations were normalized"),
+            };
             if next == counter {
                 return Err(RuntimeError::new(
                     "for loop step does not advance the counter",
@@ -445,15 +467,6 @@ impl Interpreter {
             counter = next;
         }
         Ok(ControlFlow::Continue(()))
-    }
-
-    fn require_finite_number(&self, value: &Value, operation: &str) -> Result<f64, RuntimeError> {
-        let number = self.require_number(value, operation)?;
-        if number.is_finite() {
-            Ok(number)
-        } else {
-            Err(RuntimeError::new(format!("{operation} must be finite")))
-        }
     }
 
     fn unexpected_jump(jump: Jump) -> RuntimeError {
@@ -485,32 +498,34 @@ impl Interpreter {
             Expr::Function(function) => Ok(self.make_function(None, function)),
             Expr::Nil => Ok(Value::Nil),
             Expr::Boolean(value) => Ok(Value::Boolean(*value)),
-            Expr::Number(value) => {
-                let number = value
-                    .parse::<f64>()
-                    .map_err(|_| RuntimeError::new(format!("invalid number '{value}'")))?;
-
-                Ok(Value::Number(number))
-            }
+            Expr::Number(value) => crate::runtime::numeric::parse(value),
             Expr::String(value) => Ok(Value::String(value.clone())),
             Expr::Identifier(name) => self.environment.get(name),
 
             Expr::Unary { op, operand } => {
+                // Permit the signed minimum literal without first overflowing
+                // its positive magnitude. Parentheses preserve this AST shape.
+                if matches!(op, UnaryOp::Negate)
+                    && matches!(operand.as_ref(), Expr::Number(text) if text.trim_start_matches('0') == "9223372036854775808")
+                {
+                    self.control.enter_evaluation()?;
+                    self.control.leave_evaluation();
+                    return Ok(Value::Integer(i64::MIN));
+                }
                 let value = self.evaluate(operand)?;
 
                 match op {
-                    UnaryOp::Negate => {
-                        let number = self.require_number(&value, "unary '-'")?;
-                        Ok(Value::Number(-number))
-                    }
+                    UnaryOp::Negate => crate::runtime::numeric::negate(&value),
                     UnaryOp::Not => Ok(Value::Boolean(!value.is_truthy())),
                     UnaryOp::Length => match value {
-                        Value::String(text) => Ok(Value::Number(text.chars().count() as f64)),
-                        Value::List(items) => Ok(Value::Number(
-                            read_collection(&items, "operator '#'")?.len() as f64,
+                        Value::String(text) => {
+                            Ok(crate::runtime::numeric::count(text.chars().count()))
+                        }
+                        Value::List(items) => Ok(crate::runtime::numeric::count(
+                            read_collection(&items, "operator '#'")?.len(),
                         )),
-                        Value::Object(properties) => Ok(Value::Number(
-                            read_collection(&properties, "operator '#'")?.len() as f64,
+                        Value::Object(properties) => Ok(crate::runtime::numeric::count(
+                            read_collection(&properties, "operator '#'")?.len(),
                         )),
                         other => Err(RuntimeError::new(format!(
                             "operator '#' does not support {}",
@@ -635,21 +650,7 @@ impl Interpreter {
 
         match op {
             Add | Subtract | Multiply | Divide | FloorDivide | Modulo | Power => {
-                let a = self.require_number(&left, "arithmetic")?;
-                let b = self.require_number(&right, "arithmetic")?;
-
-                let result = match op {
-                    Add => a + b,
-                    Subtract => a - b,
-                    Multiply => a * b,
-                    Divide => a / b,
-                    FloorDivide => (a / b).floor(),
-                    Modulo => a - (a / b).floor() * b,
-                    Power => a.powf(b),
-                    _ => unreachable!(),
-                };
-
-                Ok(Value::Number(result))
+                crate::runtime::numeric::binary(&left, op, &right)
             }
 
             Concatenate => Ok(Value::String(format!(
@@ -663,7 +664,12 @@ impl Interpreter {
 
             Less | LessEqual | Greater | GreaterEqual => {
                 let ordering = match (&left, &right) {
-                    (Value::Number(a), Value::Number(b)) => a.partial_cmp(b),
+                    (a, b)
+                        if crate::runtime::numeric::is_number(a)
+                            && crate::runtime::numeric::is_number(b) =>
+                    {
+                        crate::runtime::numeric::compare(a, b)
+                    }
                     (Value::String(a), Value::String(b)) => Some(a.cmp(b)),
                     _ => {
                         return Err(RuntimeError::new(format!(
@@ -690,15 +696,6 @@ impl Interpreter {
         }
     }
 
-    fn require_number(&self, value: &Value, operation: &str) -> Result<f64, RuntimeError> {
-        value.as_number().ok_or_else(|| {
-            RuntimeError::new(format!(
-                "{operation} requires Number, got {}",
-                value.type_name()
-            ))
-        })
-    }
-
     fn read_index(&self, object: Value, index: Value) -> Result<Value, RuntimeError> {
         match object {
             Value::Module(module) => match index {
@@ -706,16 +703,9 @@ impl Interpreter {
                 _ => Err(RuntimeError::new("module index must be a String")),
             },
             Value::List(items) => {
-                let index = match index {
-                    Value::Number(number)
-                        if number.is_finite()
-                            && number.fract() == 0.0
-                            && number >= 1.0
-                            && number <= usize::MAX as f64 =>
-                    {
-                        number as usize
-                    }
-                    _ => {
+                let index = match crate::runtime::numeric::index(&index, 1, usize::MAX) {
+                    Some(index) => index,
+                    None => {
                         eprintln!("Warning: invalid list index");
                         return Ok(Value::Nil);
                     }
@@ -801,15 +791,13 @@ impl Interpreter {
                 match object {
                     Value::Module(_) => Err(RuntimeError::new("module namespace is read-only")),
                     Value::List(items) => {
-                        let Value::Number(number) = index else {
+                        if !crate::runtime::numeric::is_number(&index) {
                             return Err(RuntimeError::new("list index must be a number"));
-                        };
-
-                        if !number.is_finite() || number.fract() != 0.0 || number < 1.0 {
-                            return Err(RuntimeError::new("list index must be a positive integer"));
                         }
-
-                        let position = number as usize - 1;
+                        let position =
+                            crate::runtime::numeric::index(&index, 1, usize::MAX).ok_or_else(
+                                || RuntimeError::new("list index must be a positive integer"),
+                            )? - 1;
                         let mut items = write_collection(&items, "list assignment")?;
 
                         if position >= items.len() {

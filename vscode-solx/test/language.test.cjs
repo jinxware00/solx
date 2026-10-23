@@ -47,6 +47,10 @@ test('completions and hover are quiet inside comments and both string forms', ()
 });
 
 test('standard modules require an explicit import and support aliases', () => {
+  assert.deepEqual(labels('json.'), []);
+  assert.deepEqual(labels('import "json" as data\ndata.'), ['parse', 'stringify']);
+  assert.deepEqual(labels('import "json"\nvar json = {}\njson.'), []);
+  assert.match(at('import "json"\njson.parse("null")', 'parse').description, /signed 64-bit/);
   assert.deepEqual(labels('math.'), []);
   assert.deepEqual(labels('import "math"\nmath.sq'), ['sqrt']);
   assert.equal(complete('import "math"\nmath.p')[0].kind, 'Constant');

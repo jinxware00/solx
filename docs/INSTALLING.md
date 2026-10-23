@@ -5,7 +5,7 @@ this repository; no Marketplace or GitHub release is claimed.
 
 ## Windows terminal installer
 
-Extract `solx-0.1.0-windows-x64.zip`. Open PowerShell or Windows Terminal in
+Build and extract `solx-0.2.0-windows-x64.zip`. Open PowerShell or Windows Terminal in
 the extracted folder and run:
 
 ```powershell
@@ -35,7 +35,7 @@ Standard per-user/system locations, App Paths, and absolute PATH entries for
 custom installation. Insiders, VSCodium, and remote extension hosts are not
 automatically detected.
 
-Solx Language Support **0.2.1** is bundled locally, with no installation-time
+A current source build bundles Solx Language Support **0.4.0**, with no installation-time
 downloads. The VSIX is retained under `<installation folder>\editor` even if
 skipped. If the CLI fails or times out, Solx stays installed and the terminal
 prints recovery instructions. Read `editor-install-result.txt` and, when
@@ -43,7 +43,7 @@ produced, `vscode-install.log` in that folder. Install manually using
 **Extensions: Install from VSIX...** in VS Code, or:
 
 ```powershell
-code --install-extension 'path\to\solx-language-support-0.2.1.vsix'
+code --install-extension 'path\to\solx-language-support-0.4.0.vsix'
 ```
 
 Restart VS Code and open a new terminal after PATH changes:

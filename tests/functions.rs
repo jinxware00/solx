@@ -525,39 +525,46 @@ fn captured_constants_and_annotations_remain_enforced() {
 }
 
 #[test]
-fn nil_assignment_removes_captured_local_and_global_bindings() {
+fn nil_assignment_retains_captured_local_and_global_bindings() {
     let mut interpreter = run(r#"
         fn make()
             var value = 1
             return {
-                remove = fn() value = nil end,
-                read = fn() return value end
+                clear = fn() value = nil end,
+                read = fn() return value end,
+                write = fn(next) value = next end
             }
         end
         var state = make()
-        state.remove()
-        global removable = 1
-        fn removeGlobal() removable = nil end
-        removeGlobal()
+        state.clear()
+        global optional = 1
+        fn clearGlobal() optional = nil end
+        clearGlobal()
         "#);
-    assert_eq!(interpreter.get_global("removable"), None);
-    let error = interpreter.run_source("state.read()").unwrap_err();
-    assert!(error.message.contains("undeclared variable 'value'"));
+    assert_global(&interpreter, "optional", Value::Nil);
+    interpreter
+        .run_source("global cleared = state.read() state.write(2) global restored = state.read() optional = 3")
+        .unwrap();
+    assert_global(&interpreter, "cleared", Value::Nil);
+    assert_global(&interpreter, "restored", Value::Number(2.0));
+    assert_global(&interpreter, "optional", Value::Number(3.0));
 }
 
 #[test]
-fn nil_return_assignment_deletes_a_binding_and_unmasks_outer_scope() {
+fn nil_return_assignment_retains_shadowing_until_scope_exit() {
     let interpreter = run(r#"
         var value = 10
         fn empty() end
-        fn readOuter()
+        fn readLocal()
             var value = 20
             value = empty()
             return value
         end
-        global result = readOuter()
+        global result = readLocal()
+        global outer = value
         "#);
-    assert_global(&interpreter, "result", Value::Number(10.0));
+    assert_global(&interpreter, "result", Value::Nil);
+    assert_global(&interpreter, "outer", Value::Number(10.0));
 }
 
 #[test]
@@ -768,12 +775,12 @@ fn captured_bindings_observe_redeclaration_and_nil_parameters_keep_shadowing() {
         fn make(value)
             var read = fn() return value end
             var value = value
-            return { read = read, remove = fn() value = nil end }
+            return { read = read, clear = fn() value = nil end }
         end
         var state = make(nil)
         global initial = state.read()
-        state.remove()
-        global unmasked = state.read()
+        state.clear()
+        global stillShadowed = state.read()
         fn redeclare()
             var count = 1
             var read = fn() return count end
@@ -783,7 +790,7 @@ fn captured_bindings_observe_redeclaration_and_nil_parameters_keep_shadowing() {
         global replaced = redeclare()()
         "#);
     assert_global(&interpreter, "initial", Value::Nil);
-    assert_global(&interpreter, "unmasked", Value::Number(99.0));
+    assert_global(&interpreter, "stillShadowed", Value::Nil);
     assert_global(&interpreter, "replaced", Value::Number(2.0));
 }
 

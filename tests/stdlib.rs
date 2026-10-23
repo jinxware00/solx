@@ -40,7 +40,13 @@ fn inspection_and_existing_conversions_cover_all_types() {
     assert_eq!(evaluate("num(' 12.5 ')"), Value::Number(12.5));
     assert_eq!(evaluate("num(3)"), Value::Number(3.0));
     assert_eq!(evaluate("str(nil)"), Value::String("nil".into()));
-    assert_eq!(evaluate("num('inf')"), Value::Number(f64::INFINITY));
+    assert!(
+        run("")
+            .run_source("num('inf')")
+            .unwrap_err()
+            .message
+            .contains("finite")
+    );
     assert_eq!(
         evaluate("str(math.sqrt)"),
         Value::String("<function math.sqrt>".into())
@@ -80,19 +86,13 @@ fn maths_rejects_invalid_domains_and_nonfinite_values() {
             "math.sqrt(-1)",
             "math.sqrt() argument 1 must be nonnegative",
         ),
-        ("math.abs(1 / 0)", "math.abs() argument 1 must be finite"),
-        ("math.sqrt(0 / 0)", "math.sqrt() argument 1 must be finite"),
-        (
-            "math.floor(-1 / 0)",
-            "math.floor() argument 1 must be finite",
-        ),
-        ("math.ceil(1 / 0)", "math.ceil() argument 1 must be finite"),
-        (
-            "math.round(0 / 0)",
-            "math.round() argument 1 must be finite",
-        ),
-        ("math.min(1, 0 / 0)", "math.min() argument 2 must be finite"),
-        ("math.max(1 / 0)", "math.max() argument 1 must be finite"),
+        ("math.abs(1 / 0)", "division by zero"),
+        ("math.sqrt(0 / 0)", "division by zero"),
+        ("math.floor(-1 / 0)", "division by zero"),
+        ("math.ceil(1 / 0)", "division by zero"),
+        ("math.round(0 / 0)", "division by zero"),
+        ("math.min(1, 0 / 0)", "division by zero"),
+        ("math.max(1 / 0)", "division by zero"),
     ] {
         let mut interpreter = run("");
         assert_eq!(
@@ -168,10 +168,7 @@ fn string_range_and_separator_errors_are_precise() {
             "string.slice('abc', 1, -1)",
             "string.slice() argument 3 must be an integer in 0..3",
         ),
-        (
-            "string.slice('abc', 1, 0 / 0)",
-            "string.slice() argument 3 must be finite",
-        ),
+        ("string.slice('abc', 1, 0 / 0)", "division by zero"),
         (
             "string.split('abc', '')",
             "string.split() argument 2 must not be empty",
@@ -267,7 +264,6 @@ fn list_failures_do_not_partially_mutate_the_list() {
     );
     for (initial, operation) in [
         ("[3, 1, 'x']", "list.sort(items)"),
-        ("[3, 1, 1 / 0]", "list.sort(items)"),
         ("[true, false]", "list.sort(items)"),
         ("[fn() end]", "list.sort(items)"),
         ("[{}, {}]", "list.sort(items)"),
