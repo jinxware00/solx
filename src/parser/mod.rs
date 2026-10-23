@@ -79,6 +79,16 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParseError> {
+        let mut span = self.peek().span;
+        let statement = self.parse_statement_kind()?;
+        span.end = self.tokens[self.current - 1].span.end;
+        Ok(Stmt::Located {
+            span,
+            statement: Box::new(statement),
+        })
+    }
+
+    fn parse_statement_kind(&mut self) -> Result<Stmt, ParseError> {
         if self.matches(&TokenKind::Import) {
             return self.parse_import();
         }
@@ -105,6 +115,10 @@ impl Parser {
 
         if self.matches(&TokenKind::If) {
             return self.parse_if();
+        }
+
+        if self.matches(&TokenKind::Try) {
+            return self.parse_try_catch();
         }
 
         if self.matches(&TokenKind::While) {
@@ -268,6 +282,7 @@ impl Parser {
             || self.check(&TokenKind::End)
             || self.check(&TokenKind::Else)
             || self.check(&TokenKind::ElseIf)
+            || self.check(&TokenKind::Catch)
             || self.check(&TokenKind::Semicolon)
         {
             return Ok(Stmt::Return(values));
@@ -311,6 +326,19 @@ impl Parser {
         Ok(Stmt::If {
             branches,
             else_branch,
+        })
+    }
+
+    fn parse_try_catch(&mut self) -> Result<Stmt, ParseError> {
+        let body = self.parse_block()?;
+        self.consume(&TokenKind::Catch, "expected 'catch' after try body")?;
+        let error_name = self.consume_identifier("expected an error name after 'catch'")?;
+        let catch_body = self.parse_block()?;
+        self.consume(&TokenKind::End, "expected 'end' to close try/catch")?;
+        Ok(Stmt::TryCatch {
+            body,
+            error_name,
+            catch_body,
         })
     }
 
@@ -358,6 +386,7 @@ impl Parser {
         while !self.is_at_end()
             && !self.check(&TokenKind::Else)
             && !self.check(&TokenKind::ElseIf)
+            && !self.check(&TokenKind::Catch)
             && !self.check(&TokenKind::End)
         {
             if self.matches(&TokenKind::Semicolon) {
@@ -685,7 +714,7 @@ mod tests {
         assert_eq!(program.statements.len(), 2);
 
         assert!(matches!(
-            &program.statements[0],
+            program.statements[0].unlocated(),
             Stmt::Declaration {
                 kind: DeclarationKind::Var,
                 name,
@@ -693,7 +722,10 @@ mod tests {
             } if name == "score"
         ));
 
-        assert!(matches!(&program.statements[1], Stmt::Assignment { .. }));
+        assert!(matches!(
+            program.statements[1].unlocated(),
+            Stmt::Assignment { .. }
+        ));
     }
 
     #[test]
@@ -703,7 +735,7 @@ mod tests {
         let Stmt::Declaration {
             initializer: Some(expression),
             ..
-        } = &program.statements[0]
+        } = program.statements[0].unlocated()
         else {
             panic!("expected declaration with initializer");
         };
@@ -733,7 +765,7 @@ mod tests {
         let Stmt::Declaration {
             initializer: Some(expression),
             ..
-        } = &program.statements[0]
+        } = program.statements[0].unlocated()
         else {
             panic!("expected declaration");
         };
@@ -769,7 +801,7 @@ mod tests {
         let program = parse(source).unwrap();
 
         assert!(matches!(
-            &program.statements[0],
+            program.statements[0].unlocated(),
             Stmt::If {
                 branches,
                 else_branch: Some(_),
@@ -789,7 +821,7 @@ mod tests {
         assert_eq!(program.statements.len(), 3);
 
         assert!(matches!(
-            &program.statements[0],
+            program.statements[0].unlocated(),
             Stmt::Declaration {
                 initializer: Some(Expr::List(items)),
                 ..
@@ -797,7 +829,7 @@ mod tests {
         ));
 
         assert!(matches!(
-            &program.statements[1],
+            program.statements[1].unlocated(),
             Stmt::Declaration {
                 initializer: Some(Expr::Object(properties)),
                 ..
@@ -816,7 +848,7 @@ mod tests {
         let program = parse("var score: Number = 100").unwrap();
 
         assert!(matches!(
-            &program.statements[0],
+            program.statements[0].unlocated(),
             Stmt::Declaration {
                 type_annotation: Some(type_name),
                 ..

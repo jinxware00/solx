@@ -6,13 +6,19 @@ use super::error::RuntimeError;
 use super::value::Value;
 
 #[derive(Debug, Clone)]
-struct Binding {
-    value: Value,
+pub(super) struct Binding {
+    pub(super) value: Value,
     constant: bool,
     type_annotation: Option<String>,
 }
 
-type Scope = Rc<RefCell<HashMap<String, Binding>>>;
+pub(super) type Scope = Rc<RefCell<HashMap<String, Binding>>>;
+
+fn new_scope() -> Scope {
+    let scope = Scope::default();
+    super::gc::register(super::gc::Node::Scope(scope.clone()));
+    scope
+}
 
 /// A lexical scope chain. Clones share bindings, but have independent scope stacks.
 #[derive(Debug, Clone)]
@@ -21,6 +27,8 @@ pub struct Environment {
     globals: Scope,
     // Definition context travels with closures; it is never a Solx-visible value.
     pub(crate) source_file: Option<std::path::PathBuf>,
+    // Separate from the import base: REPL/input buffers are not entry-file lines.
+    pub(crate) diagnostic_file: Option<std::path::PathBuf>,
 }
 
 impl Default for Environment {
@@ -32,20 +40,36 @@ impl Default for Environment {
 impl Environment {
     pub fn new() -> Self {
         Self {
-            scopes: vec![Scope::default()],
-            globals: Scope::default(),
+            scopes: vec![new_scope()],
+            globals: new_scope(),
             source_file: None,
+            diagnostic_file: None,
         }
     }
 
     pub fn begin_scope(&mut self) {
-        self.scopes.push(Scope::default());
+        self.scopes.push(new_scope());
     }
 
     pub fn end_scope(&mut self) {
         if self.scopes.len() > 1 {
             self.scopes.pop();
         }
+    }
+
+    pub(super) fn collection_scopes(&self) -> Vec<super::gc::Node> {
+        self.scopes
+            .iter()
+            .chain(std::iter::once(&self.globals))
+            .cloned()
+            .map(super::gc::Node::Scope)
+            .collect()
+    }
+
+    /// Release this owner's references, without clearing any captured scope.
+    pub(crate) fn release_roots(&mut self) {
+        self.scopes.clear();
+        self.globals = Scope::default();
     }
 
     pub fn define(
@@ -76,7 +100,7 @@ impl Environment {
         target.insert(
             name,
             Binding {
-                value,
+                value: value.tracked(),
                 constant,
                 type_annotation,
             },
@@ -121,7 +145,7 @@ impl Environment {
                 if matches!(value, Value::Nil) {
                     scope.remove(name);
                 } else {
-                    scope.get_mut(name).expect("binding exists").value = value;
+                    scope.get_mut(name).expect("binding exists").value = value.tracked();
                 }
 
                 return Ok(());

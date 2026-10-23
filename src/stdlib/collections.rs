@@ -1,9 +1,11 @@
 use super::{Arguments, LibraryFunction, NativeResult};
-use crate::runtime::Value;
+use crate::runtime::{Value, read_collection, write_collection};
 
 pub(super) const LIST_FUNCTIONS: &[LibraryFunction] = &[
     LibraryFunction::fixed("list.len", 1, |a| {
-        Ok(Value::Number(a.list(0)?.borrow().len() as f64))
+        Ok(Value::Number(
+            read_collection(a.list(0)?, "list.len()")?.len() as f64,
+        ))
     }),
     LibraryFunction::fixed("list.append", 2, append),
     LibraryFunction::fixed("list.remove", 2, remove_item),
@@ -15,29 +17,29 @@ pub(super) const OBJECT_FUNCTIONS: &[LibraryFunction] = &[
     LibraryFunction::fixed("object.keys", 1, keys),
     LibraryFunction::fixed("object.has", 2, |a| {
         Ok(Value::Boolean(
-            a.object(0)?.borrow().contains_key(a.string(1)?),
+            read_collection(a.object(0)?, "object.has()")?.contains_key(a.string(1)?),
         ))
     }),
     LibraryFunction::fixed("object.remove", 2, remove_property),
 ];
 
 fn append(args: &Arguments<'_>) -> NativeResult {
-    args.list(0)?.borrow_mut().push(args.values[1].clone());
+    write_collection(args.list(0)?, "list.append()")?.push(args.values[1].clone());
     Ok(Value::Nil)
 }
 
 fn remove_item(args: &Arguments<'_>) -> NativeResult {
     let list = args.list(0)?;
-    let len = list.borrow().len();
+    let len = read_collection(list, "list.remove()")?.len();
     if len == 0 {
         return Err(args.error(0, "must not be empty"));
     }
     let index = args.integer(1, 1, len)?;
-    Ok(list.borrow_mut().remove(index - 1))
+    Ok(write_collection(list, "list.remove()")?.remove(index - 1))
 }
 
 fn find(args: &Arguments<'_>) -> NativeResult {
-    let items = args.list(0)?.borrow();
+    let items = read_collection(args.list(0)?, "list.find()")?;
     Ok(items
         .iter()
         .position(|item| item == &args.values[1])
@@ -45,7 +47,7 @@ fn find(args: &Arguments<'_>) -> NativeResult {
 }
 
 fn sort(args: &Arguments<'_>) -> NativeResult {
-    let mut items = args.list(0)?.borrow_mut();
+    let mut items = write_collection(args.list(0)?, "list.sort()")?;
     let numbers = items
         .iter()
         .all(|v| matches!(v, Value::Number(n) if n.is_finite()));
@@ -62,7 +64,7 @@ fn sort(args: &Arguments<'_>) -> NativeResult {
 }
 
 fn keys(args: &Arguments<'_>) -> NativeResult {
-    let properties = args.object(0)?.borrow();
+    let properties = read_collection(args.object(0)?, "object.keys()")?;
     let mut keys: Vec<_> = properties.keys().cloned().collect();
     keys.sort();
     Ok(Value::list(keys.into_iter().map(Value::String).collect()))
@@ -71,5 +73,7 @@ fn keys(args: &Arguments<'_>) -> NativeResult {
 fn remove_property(args: &Arguments<'_>) -> NativeResult {
     let properties = args.object(0)?;
     let key = args.string(1)?;
-    Ok(properties.borrow_mut().remove(key).unwrap_or(Value::Nil))
+    Ok(write_collection(properties, "object.remove()")?
+        .remove(key)
+        .unwrap_or(Value::Nil))
 }

@@ -49,7 +49,8 @@ const modules = {
 const keywords = {
   var: 'Declare a local variable.', global: 'Declare a file-wide variable.', const: 'Declare a binding that cannot be reassigned.',
   fn: 'Declare a named or anonymous function.', if: 'Start a conditional.', then: 'Start an if or elseif body.',
-  elseif: 'Add a conditional branch.', else: 'Add a fallback branch.', end: 'Close a function, conditional, or loop.',
+  elseif: 'Add a conditional branch.', else: 'Add a fallback branch.', end: 'Close a function, conditional, loop, or try/catch.',
+  try: 'Run a block with a runtime error handler.', catch: 'Handle a runtime error as an Object with message, location, and trace fields.',
   for: 'Start an inclusive numeric for loop.', while: 'Repeat while a condition is truthy.', do: 'Start a loop body.',
   break: 'Exit the nearest loop in this function.', continue: 'Continue the nearest loop in this function.',
   return: 'Return one value, or nil when bare, from a function.', import: 'Import an explicit built-in module or .solx file.',

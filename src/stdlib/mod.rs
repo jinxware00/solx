@@ -218,8 +218,11 @@ pub(crate) fn module(name: &str) -> Option<Value> {
     if name == "math" {
         exports.insert("pi".into(), Value::Number(std::f64::consts::PI));
     }
-    Some(Value::Module(Rc::new(ModuleValue {
-        name: name.to_owned(),
-        exports: Rc::new(RefCell::new(exports)),
-    })))
+    Some(
+        Value::Module(Rc::new(ModuleValue {
+            name: name.to_owned(),
+            exports: Rc::new(RefCell::new(exports)),
+        }))
+        .tracked(),
+    )
 }

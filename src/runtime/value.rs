@@ -70,13 +70,16 @@ impl PartialEq for ModuleValue {
 
 impl ModuleValue {
     pub(crate) fn get(&self, name: &str) -> Result<Value, super::RuntimeError> {
-        self.exports.borrow().get(name).cloned().ok_or_else(|| {
-            super::RuntimeError::new(format!("module '{}' has no export '{name}'", self.name))
-        })
+        super::read_collection(&self.exports, "module export access")?
+            .get(name)
+            .cloned()
+            .ok_or_else(|| {
+                super::RuntimeError::new(format!("module '{}' has no export '{name}'", self.name))
+            })
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub enum Value {
     Nil,
     Boolean(bool),
@@ -91,11 +94,18 @@ pub enum Value {
 
 impl Value {
     pub fn list(items: Vec<Value>) -> Self {
-        Self::List(Rc::new(RefCell::new(items)))
+        Self::List(Rc::new(RefCell::new(items))).tracked()
     }
 
     pub fn object(properties: HashMap<String, Value>) -> Self {
-        Self::Object(Rc::new(RefCell::new(properties)))
+        Self::Object(Rc::new(RefCell::new(properties))).tracked()
+    }
+
+    pub(crate) fn tracked(self) -> Self {
+        if let Some(node) = super::gc::Node::from_value(&self) {
+            super::gc::register(node);
+        }
+        self
     }
 
     pub fn type_name(&self) -> &'static str {
@@ -116,6 +126,10 @@ impl Value {
     }
 
     pub fn to_solx_string(&self) -> String {
+        super::collection_ops::format(self, false)
+    }
+
+    pub(super) fn scalar_string(&self) -> String {
         match self {
             Self::Nil => "nil".to_owned(),
             Self::Boolean(value) => value.to_string(),
@@ -133,26 +147,7 @@ impl Value {
             },
             Self::NativeFunction(function) => format!("<function {}>", function.name()),
             Self::Module(module) => format!("<module {}>", module.name),
-            Self::List(items) => {
-                let items = items.borrow();
-                let contents = items
-                    .iter()
-                    .map(Self::to_solx_string)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-
-                format!("[{contents}]")
-            }
-            Self::Object(properties) => {
-                let properties = properties.borrow();
-                let mut entries = properties
-                    .iter()
-                    .map(|(key, value)| format!("{key} = {}", value.to_solx_string()))
-                    .collect::<Vec<_>>();
-
-                entries.sort();
-                format!("{{{}}}", entries.join(", "))
-            }
+            Self::List(_) | Self::Object(_) => unreachable!("collections use iterative formatting"),
         }
     }
 
@@ -161,6 +156,21 @@ impl Value {
             Self::Number(value) => Some(*value),
             _ => None,
         }
+    }
+}
+
+/// Structural comparison returns false when a needed collection is mutably
+/// borrowed by a Rust host, even for aliases. Retry after releasing the borrow
+/// to compare its contents; this does not bypass scalar rules such as NaN.
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        super::collection_ops::equal(self, other)
+    }
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&super::collection_ops::format(self, true))
     }
 }
 
@@ -189,5 +199,99 @@ mod tests {
         assert_eq!(Value::Number(42.0).to_string(), "42");
         assert_eq!(Value::Boolean(true).to_string(), "true");
         assert_eq!(Value::Nil.to_string(), "nil");
+    }
+
+    #[test]
+    fn collection_cycles_are_reclaimed_at_a_collection_checkpoint() {
+        let value = Value::list(vec![]);
+        let Value::List(items) = &value else {
+            unreachable!()
+        };
+        let weak = Rc::downgrade(items);
+        items.borrow_mut().push(value.clone());
+        drop(value);
+        assert!(weak.upgrade().is_some(), "Rc alone retains the self-edge");
+        super::super::collect_garbage();
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn interpreter_drop_collects_nonrecursive_function_scope_cycles() {
+        let mut interpreter = crate::interpreter::Interpreter::new();
+        interpreter
+            .run_source("global f = fn() return 1 end")
+            .unwrap();
+        let Value::Function(function) = interpreter.get_global("f").unwrap() else {
+            unreachable!()
+        };
+        let weak = Rc::downgrade(&function);
+        drop(function);
+        drop(interpreter);
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn collection_reclaims_export_function_environment_cycles() {
+        let mut environment = Environment::new();
+        let exports = Rc::new(RefCell::new(HashMap::new()));
+        environment
+            .define(
+                "exports".into(),
+                Value::Object(exports.clone()),
+                true,
+                None,
+                false,
+            )
+            .unwrap();
+        let function = Value::Function(Rc::new(UserFunction {
+            name: None,
+            definition: Function {
+                parameters: vec![],
+                body: vec![],
+            },
+            closure: environment.clone(),
+        }));
+        exports.borrow_mut().insert("f".into(), function);
+        let module = Rc::new(ModuleValue {
+            name: "audit".into(),
+            exports: exports.clone(),
+        });
+        let weak_module = Rc::downgrade(&module);
+        let weak_exports = Rc::downgrade(&exports);
+        drop(environment);
+        drop(exports);
+        drop(module);
+        assert!(
+            weak_module.upgrade().is_none(),
+            "module namespace itself has no back-edge"
+        );
+        assert!(
+            weak_exports.upgrade().is_some(),
+            "Rc alone retains export cycles"
+        );
+        super::super::collect_garbage();
+        assert!(weak_exports.upgrade().is_none());
+    }
+
+    #[test]
+    fn ownership_audit_acyclic_values_and_uncaptured_functions_are_released() {
+        let value = Value::list(vec![Value::list(vec![Value::Number(1.0)])]);
+        let Value::List(items) = &value else {
+            unreachable!()
+        };
+        let weak = Rc::downgrade(items);
+        drop(value);
+        assert!(weak.upgrade().is_none());
+        let function = Rc::new(UserFunction {
+            name: None,
+            definition: Function {
+                parameters: vec![],
+                body: vec![],
+            },
+            closure: Environment::new(),
+        });
+        let weak = Rc::downgrade(&function);
+        drop(function);
+        assert!(weak.upgrade().is_none());
     }
 }

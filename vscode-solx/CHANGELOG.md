@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add keyword completion and a snippet for the interpreter's new `try`/`catch`.
+- Recognize handler bindings and separate try/catch scopes for API completion
+  and hover. Requires the matching source-built interpreter.
+
 ## 0.2.1
 
 - Configure the official `jinxware00` publisher and author profile.

@@ -4,21 +4,23 @@ use solx::parser::parse;
 #[test]
 fn named_and_anonymous_functions_share_parameter_and_body_structure() {
     let program = parse("fn add(a, b) return a + b end var empty = fn() return end").unwrap();
-    let Stmt::Function { name, function } = &program.statements[0] else {
+    let Stmt::Function { name, function } = program.statements[0].unlocated() else {
         panic!("expected named function declaration");
     };
     assert_eq!(name, "add");
     assert_eq!(function.parameters, ["a", "b"]);
-    assert!(matches!(&function.body[..], [Stmt::Return(values)] if values.len() == 1));
+    assert_eq!(function.body.len(), 1);
+    assert!(matches!(function.body[0].unlocated(), Stmt::Return(values) if values.len() == 1));
     let Stmt::Declaration {
         initializer: Some(Expr::Function(function)),
         ..
-    } = &program.statements[1]
+    } = program.statements[1].unlocated()
     else {
         panic!("expected anonymous function initializer");
     };
     assert!(function.parameters.is_empty());
-    assert_eq!(function.body, [Stmt::Return(vec![])]);
+    assert_eq!(function.body.len(), 1);
+    assert_eq!(function.body[0].unlocated(), &Stmt::Return(vec![]));
 }
 
 #[test]
@@ -27,7 +29,7 @@ fn parses_calls_on_anonymous_functions_and_returned_functions() {
     let Stmt::Declaration {
         initializer: Some(Expr::Call { callee, arguments }),
         ..
-    } = &program.statements[0]
+    } = program.statements[0].unlocated()
     else {
         panic!("expected call initializer");
     };

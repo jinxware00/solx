@@ -39,6 +39,10 @@ impl Default for ModuleLoader {
 }
 
 impl ModuleLoader {
+    pub(crate) fn release_roots(&mut self) {
+        self.cache.clear();
+    }
+
     pub(crate) fn resolve(
         &self,
         specifier: &str,
@@ -87,6 +91,7 @@ impl ModuleLoader {
     pub(crate) fn read(path: &Path) -> Result<String, RuntimeError> {
         fs::read_to_string(path).map_err(|error| {
             RuntimeError::new(format!("cannot read '{}': {error}", path.display()))
+                .at(Some(path), None)
         })
     }
 

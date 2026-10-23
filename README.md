@@ -3,9 +3,14 @@
 <img src="assets/logo.png" alt="Solx" width="120">
 
 Solx is a small, Lua-inspired language implemented in Rust. It supports
-functions and closures, lists and objects, loops, and explicit module imports.
+functions and closures, lists and objects, loops, explicit module imports,
+and `try`/`catch` with structured runtime errors.
 It is in early development; see the [specification](docs/SPEC.md) for the
 distinction between implemented behavior and planned features.
+The [language review](docs/LANGUAGE_REVIEW.md) records current gaps, lessons
+from the official Lua source, and the next development priorities.
+Automatic [cycle collection](docs/MEMORY_MANAGEMENT.md) reclaims unreachable
+closures and collections while preserving values held by Rust callers.
 
 ## Example
 

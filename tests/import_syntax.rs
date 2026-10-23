@@ -5,21 +5,23 @@ fn import_syntax_supports_default_names_aliases_and_existing_as_identifiers() {
     let program =
         parse(r#"import "math" import "./lib/player.solx" as player var as = 1"#).unwrap();
     assert_eq!(
-        program.statements[0],
-        Stmt::Import {
+        program.statements[0].unlocated(),
+        &Stmt::Import {
             specifier: "math".into(),
             name: "math".into()
         }
     );
     assert_eq!(
-        program.statements[1],
-        Stmt::Import {
+        program.statements[1].unlocated(),
+        &Stmt::Import {
             specifier: "./lib/player.solx".into(),
             name: "player".into()
         }
     );
     let program = parse(r#"import "./lib/player.solx""#).unwrap();
-    assert!(matches!(&program.statements[0], Stmt::Import { name, .. } if name == "player"));
+    assert!(
+        matches!(program.statements[0].unlocated(), Stmt::Import { name, .. } if name == "player")
+    );
     parse(r#"import "./my module.solx" as module"#).unwrap();
 }
 

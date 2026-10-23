@@ -6,8 +6,9 @@ use std::rc::Rc;
 use crate::modules::{ModuleId, ModuleLoader};
 use crate::parser::ast::{BinaryOp, DeclarationKind, Expr, Function, Program, Stmt, UnaryOp};
 use crate::parser::parse;
+use crate::runtime::error::SourceLocation;
 use crate::runtime::value::{ModuleValue, NativeFunction, UserFunction};
-use crate::runtime::{Environment, RuntimeError, Value};
+use crate::runtime::{Environment, RuntimeError, Value, read_collection, write_collection};
 
 enum Jump {
     Return(Value),
@@ -20,6 +21,7 @@ type ExecutionResult = Result<ControlFlow<Jump>, RuntimeError>;
 pub struct Interpreter {
     environment: Environment,
     modules: ModuleLoader,
+    current_location: Option<SourceLocation>,
 }
 
 impl Default for Interpreter {
@@ -28,11 +30,22 @@ impl Default for Interpreter {
     }
 }
 
+impl Drop for Interpreter {
+    fn drop(&mut self) {
+        // Drop only this interpreter's roots. Host-held Values and captured
+        // environments remain roots and must retain their complete contents.
+        self.environment.release_roots();
+        self.modules.release_roots();
+        crate::runtime::collect_garbage();
+    }
+}
+
 impl Interpreter {
     pub fn new() -> Self {
         Self {
             environment: Self::fresh_environment(),
             modules: ModuleLoader::default(),
+            current_location: None,
         }
     }
 
@@ -64,9 +77,9 @@ impl Interpreter {
         let id = ModuleId::File(path.clone());
         self.modules.begin(&id)?;
         self.environment.source_file = Some(path.clone());
-        let result = self.run_source(&source);
+        let result = self.run_source_in(&source, Some(&path));
         self.modules.end(&id);
-        result.map_err(|error| RuntimeError::new(format!("{}: {error}", path.display())))
+        result
     }
 
     fn import(&mut self, specifier: &str) -> Result<Value, RuntimeError> {
@@ -76,8 +89,11 @@ impl Interpreter {
                 .environment
                 .source_file
                 .as_deref()
-                .map_or_else(|| "<source>".to_owned(), |p| p.display().to_string());
-            RuntimeError::new(format!("import '{specifier}' from '{origin}': {error}"))
+                .map_or_else(|| "<source>".to_owned(), |path| path.display().to_string());
+            error.context(
+                format!("import '{specifier}' from '{origin}'"),
+                self.current_location.clone(),
+            )
         })
     }
 
@@ -115,23 +131,37 @@ impl Interpreter {
             false,
         )?;
         let caller = std::mem::replace(&mut self.environment, environment);
-        let result = self.run_source(&source);
+        let result = self.run_source_in(&source, Some(path));
         self.environment = caller;
-        result.map_err(|error| RuntimeError::new(format!("{}: {error}", path.display())))?;
+        result?;
         Ok(Value::Module(Rc::new(ModuleValue {
             name: path.display().to_string(),
             exports,
-        })))
+        }))
+        .tracked())
     }
 
     pub fn run_source(&mut self, source: &str) -> Result<(), RuntimeError> {
-        let program = parse(source).map_err(|error| RuntimeError::new(error.to_string()))?;
+        self.run_source_in(source, None)
+    }
 
-        self.run_program(&program)
+    fn run_source_in(&mut self, source: &str, file: Option<&Path>) -> Result<(), RuntimeError> {
+        let program = parse(source)
+            .map_err(|error| RuntimeError::new(error.message).at(file, Some(error.span)))?;
+
+        let previous = std::mem::replace(
+            &mut self.environment.diagnostic_file,
+            file.map(Path::to_owned),
+        );
+        let result = self.run_program(&program);
+        self.environment.diagnostic_file = previous;
+        result
     }
 
     pub fn run_program(&mut self, program: &Program) -> Result<(), RuntimeError> {
-        match self.execute_statements(&program.statements)? {
+        let result = self.execute_statements(&program.statements);
+        crate::runtime::collect_garbage();
+        match result? {
             ControlFlow::Continue(()) => Ok(()),
             ControlFlow::Break(jump) => Err(Self::unexpected_jump(jump)),
         }
@@ -142,7 +172,27 @@ impl Interpreter {
     }
 
     fn execute(&mut self, statement: &Stmt) -> ExecutionResult {
+        let Stmt::Located { span, .. } = statement else {
+            let result = self.execute_unlocated(statement);
+            crate::runtime::maybe_collect();
+            return result;
+        };
+        let location = SourceLocation {
+            file: self.environment.diagnostic_file.clone(),
+            span: Some(*span),
+        };
+        let previous = self.current_location.replace(location.clone());
+        let result = self
+            .execute_unlocated(statement.unlocated())
+            .map_err(|error| error.at(location.file.as_deref(), location.span));
+        self.current_location = previous;
+        crate::runtime::maybe_collect();
+        result
+    }
+
+    fn execute_unlocated(&mut self, statement: &Stmt) -> ExecutionResult {
         match statement {
+            Stmt::Located { .. } => unreachable!("source metadata handled by execute"),
             Stmt::Import { specifier, name } => {
                 let module = self.import(specifier)?;
                 self.environment
@@ -198,6 +248,27 @@ impl Interpreter {
                 }
             }
 
+            Stmt::TryCatch {
+                body,
+                error_name,
+                catch_body,
+            } => {
+                // Only language errors enter the handler; return/break/continue
+                // keep their normal targets. The try scope is already restored.
+                let error = match self.execute_block(body) {
+                    Ok(flow) => return Ok(flow),
+                    Err(error) => error,
+                };
+                self.environment.begin_scope();
+                let result = self
+                    .environment
+                    .define(error_name.clone(), error.to_value(), false, None, false)
+                    .and_then(|()| self.execute_statements(catch_body));
+                self.environment.end_scope();
+                // Handler failures propagate outward, never back into this catch.
+                return result;
+            }
+
             Stmt::While { condition, body } => {
                 while self.evaluate(condition)?.is_truthy() {
                     match self.execute_block(body)? {
@@ -251,6 +322,7 @@ impl Interpreter {
         self.environment.begin_scope();
         let result = self.execute_statements(statements);
         self.environment.end_scope();
+        crate::runtime::maybe_collect();
         result
     }
 
@@ -288,6 +360,7 @@ impl Interpreter {
                 .define(name.to_owned(), Value::Number(counter), false, None, false)
                 .and_then(|()| self.execute_statements(body));
             self.environment.end_scope();
+            crate::runtime::maybe_collect();
             match result? {
                 ControlFlow::Break(Jump::Break) => break,
                 flow @ ControlFlow::Break(Jump::Return(_)) => return Ok(flow),
@@ -331,6 +404,7 @@ impl Interpreter {
             definition: definition.clone(),
             closure: self.environment.clone(),
         }))
+        .tracked()
     }
 
     fn evaluate(&mut self, expression: &Expr) -> Result<Value, RuntimeError> {
@@ -359,10 +433,12 @@ impl Interpreter {
                     UnaryOp::Not => Ok(Value::Boolean(!value.is_truthy())),
                     UnaryOp::Length => match value {
                         Value::String(text) => Ok(Value::Number(text.chars().count() as f64)),
-                        Value::List(items) => Ok(Value::Number(items.borrow().len() as f64)),
-                        Value::Object(properties) => {
-                            Ok(Value::Number(properties.borrow().len() as f64))
-                        }
+                        Value::List(items) => Ok(Value::Number(
+                            read_collection(&items, "operator '#'")?.len() as f64,
+                        )),
+                        Value::Object(properties) => Ok(Value::Number(
+                            read_collection(&properties, "operator '#'")?.len() as f64,
+                        )),
                         other => Err(RuntimeError::new(format!(
                             "operator '#' does not support {}",
                             other.type_name()
@@ -448,13 +524,11 @@ impl Interpreter {
                 let result = self.execute_statements(&function.definition.body);
                 // Restore the caller on both returns and runtime errors.
                 self.environment = caller;
-                let flow = result.map_err(|error| match &function.closure.source_file {
-                    Some(path) => RuntimeError::new(format!(
-                        "{}: in {}(): {error}",
-                        path.display(),
-                        function.name.as_deref().unwrap_or("<anonymous>")
-                    )),
-                    None => error,
+                let flow = result.map_err(|error| {
+                    error.context(
+                        format!("in {}()", function.name.as_deref().unwrap_or("<anonymous>")),
+                        self.current_location.clone(),
+                    )
                 })?;
                 match flow {
                     ControlFlow::Break(Jump::Return(value)) => Ok(value),
@@ -566,7 +640,7 @@ impl Interpreter {
                     }
                 };
 
-                let items = items.borrow();
+                let items = read_collection(&items, "list indexing")?;
 
                 match items.get(index - 1) {
                     Some(value) => Ok(value.clone()),
@@ -585,7 +659,7 @@ impl Interpreter {
                     }
                 };
 
-                match properties.borrow().get(&key) {
+                match read_collection(&properties, "object indexing")?.get(&key) {
                     Some(value) => Ok(value.clone()),
                     None => {
                         eprintln!("Warning: missing object property '{key}'");
@@ -604,13 +678,15 @@ impl Interpreter {
     fn read_property(&self, object: Value, name: &str) -> Result<Value, RuntimeError> {
         match object {
             Value::Module(module) => module.get(name),
-            Value::Object(properties) => match properties.borrow().get(name) {
-                Some(value) => Ok(value.clone()),
-                None => {
-                    eprintln!("Warning: missing object property '{name}'");
-                    Ok(Value::Nil)
+            Value::Object(properties) => {
+                match read_collection(&properties, "property access")?.get(name) {
+                    Some(value) => Ok(value.clone()),
+                    None => {
+                        eprintln!("Warning: missing object property '{name}'");
+                        Ok(Value::Nil)
+                    }
                 }
-            },
+            }
 
             other => Err(RuntimeError::new(format!(
                 "cannot access property '{name}' on {}",
@@ -633,7 +709,7 @@ impl Interpreter {
                     return Err(RuntimeError::new("property assignment requires an Object"));
                 };
 
-                properties.borrow_mut().insert(name.clone(), value);
+                write_collection(&properties, "property assignment")?.insert(name.clone(), value);
                 Ok(())
             }
 
@@ -653,7 +729,7 @@ impl Interpreter {
                         }
 
                         let position = number as usize - 1;
-                        let mut items = items.borrow_mut();
+                        let mut items = write_collection(&items, "list assignment")?;
 
                         if position >= items.len() {
                             return Err(RuntimeError::new(
@@ -670,7 +746,7 @@ impl Interpreter {
                             return Err(RuntimeError::new("object index must be a string"));
                         };
 
-                        properties.borrow_mut().insert(key, value);
+                        write_collection(&properties, "object assignment")?.insert(key, value);
                         Ok(())
                     }
 

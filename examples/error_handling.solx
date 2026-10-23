@@ -1,0 +1,16 @@
+import "core"
+
+fn readScore(text)
+    var score = num(text)
+    core.assert(score >= 0, "score must be nonnegative")
+    return score
+end
+
+try
+    print(readScore("invalid"))
+catch err
+    print("Could not read score: " .. err.message)
+    print("Using default score: 0")
+end
+
+print("Program continues")

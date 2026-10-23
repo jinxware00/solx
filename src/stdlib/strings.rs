@@ -1,5 +1,5 @@
 use super::{Arguments, LibraryFunction, NativeResult};
-use crate::runtime::Value;
+use crate::runtime::{Value, read_collection};
 
 pub(super) const FUNCTIONS: &[LibraryFunction] = &[
     LibraryFunction::fixed("string.len", 1, |a| {
@@ -58,7 +58,7 @@ fn split(args: &Arguments<'_>) -> NativeResult {
 }
 
 fn join(args: &Arguments<'_>) -> NativeResult {
-    let items = args.list(0)?.borrow();
+    let items = read_collection(args.list(0)?, "string.join()")?;
     let separator = args.string(1)?;
     let strings = items
         .iter()

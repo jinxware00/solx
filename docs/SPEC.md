@@ -39,9 +39,9 @@ workloads.
     measuring trade-offs rather than assuming a particular
     representation is automatically faster.
 -   Keep strings, lists, objects, and closures memory-safe.
--   Use automatic garbage collection. The specific collector algorithm
-    remains undecided and must be chosen with measurements of memory
-    overhead and pause times.
+-   Use automatic garbage collection. The current runtime supplements
+    reference counting with graph-based cycle collection (section 9.5).
+    Future collector choices need measurements of overhead and pause times.
 
 A tree-walking interpreter is a practical starting point, not the
 assumed final performance architecture.
@@ -217,7 +217,9 @@ collection type remain to be specified.
 
 ## 8. Strings and interpolation
 
-Both concatenation and string interpolation are supported.
+Concatenation is implemented. String interpolation is planned; the current
+interpreter treats braces inside strings as literal text. The interpolation
+example below illustrates the intended future syntax.
 
 ``` lua
 var name = "Jinx"
@@ -282,6 +284,69 @@ Accessing a missing object property produces a warning and returns
 -   Collection mutation methods and standard operations.
 -   Equality and length semantics for lists and objects.
 
+### 9.4 Cyclic collections (implemented)
+
+Lists and objects may contain themselves, directly or through other
+collections. `str`, `print`, concatenation, Display, and Rust debugging
+render a back-reference on the current traversal path as `<cycle>`.
+For example, a list containing itself prints `[<cycle>]`; an object with
+`self` referring to itself prints `{self = <cycle>}`. Repeated sharing
+without a cycle still prints each occurrence in full. Ordinary Solx
+formatting, including sorting rendered object entries, is unchanged.
+The marker is diagnostic text, not a new literal or serialization format.
+
+Collection equality compares structural contents: matching list lengths
+and ordered elements, or matching object keys and values. A previously
+visited pair of collection identities is considered already checked;
+all other reachable pairs must match. Thus a one-node self-cycle and a
+two-node cycle with the same infinite structural unfolding compare equal.
+Sharing topology does not affect equality. Scalar rules remain unchanged,
+including `NaN ~= NaN` even inside the same collection; functions and
+modules retain identity equality. `list.find` uses these same rules.
+
+Formatting, Debug, and equality use explicit traversal stacks. Debug
+quotes strings and keeps functions/modules opaque. A collection currently
+mutably borrowed by a Rust host renders as `<borrowed>`; ordinary Solx
+execution does not expose such borrows. These operations do not themselves
+collect cycles or guarantee bounded output size. Collection checkpoints are
+described below. Ordinary acyclic graph destruction is still recursive and
+has separate limits; see `RUNTIME_AUDIT.md`.
+
+### 9.5 Memory management (implemented)
+
+Values retain the existing reference-counted representation. An automatic
+cycle collector traces registered lists, objects, closure scopes, functions,
+and module namespaces. It counts internal references and treats remaining
+strong references as roots. Active interpreters, successful module caches,
+temporary expression/call results, and values held by Rust callers therefore
+remain live. Weak references do not keep a value alive. An exports object
+and an alias exposing that same object are one graph node.
+
+Collection checks run at statement and block/loop checkpoints after allocation
+pressure reaches a threshold. Executed-program completion (including runtime
+errors) and interpreter destruction also collect. The initial threshold is
+512 registered allocations; after a pass it is at least the retained node
+count. This is an implementation policy, not a language timing guarantee.
+Collection does not change identity, mutate reachable values, run Solx code,
+or clear live captured scopes. Completed side effects and cache behavior stay
+unchanged. There are no finalizers or user-visible collection callbacks.
+
+The collector is synchronous and thread-local, matching the existing `Rc`
+API. Borrowed containers are retained conservatively and retried later.
+Rust hosts may call `runtime::collect_garbage()` for a checkpoint and node
+statistics, and `runtime::track_value(&value)` to adopt manually constructed
+or directly mutated raw `Rc` graphs. Use these before disconnecting raw nodes;
+unregistered, unreachable host graphs cannot be discovered afterward.
+Holding a host Value after its Interpreter is destroyed is supported; after
+dropping the last host root, collect explicitly or use the next interpreter
+checkpoint. Normal Solx allocations are registered automatically.
+
+This is cycle collection, not a moving heap, a sandbox, an instruction/memory
+budget, or a guarantee of bounded pauses. Parsing, evaluation, AST drop, and
+ordinary acyclic value destruction can still exhaust the Rust stack. See
+[MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md) for the ownership contract,
+algorithm, measurements, and remaining work.
+
 ## 10. Functions
 
 The tree-walk interpreter currently implements named and anonymous
@@ -333,10 +398,16 @@ retain their constant, type annotation, and nil-assignment checks.
 Function equality compares identity, including when functions appear in
 collections.
 
-The current implementation shares scopes through `Rc<RefCell<...>>`.
-Reference cycles between functions and their environments are not yet
-collected and can retain memory. Recursion uses the Rust call stack;
-tail-call optimisation and a garbage collector are not implemented.
+The current implementation shares scopes through `Rc<RefCell<...>>` and
+collects unreachable function/environment, collection, and exported-closure
+cycles at the checkpoints in section 9.5. Live closures continue to retain
+their captured bindings. The earlier leak probes in `RUNTIME_AUDIT.md` now
+have collection regression coverage.
+Recursion uses the Rust call stack; tail-call optimisation and a general
+execution/depth limit are not implemented.
+Deep syntax, expression evaluation, AST cloning/destruction, and long
+acyclic import chains can also exhaust the stack. Collection traversal
+safety does not protect these other operations.
 
 ### 10.4 Multiple return values
 
@@ -432,13 +503,14 @@ mutations are retained.
 
 ### 12.1 `try` / `catch`
 
-`try`/`catch` is planned; the current interpreter does not implement it.
+`try`/`catch` is implemented. It handles recoverable Solx runtime errors
+without wrapping the protected body in another function.
 
 ``` lua
 try
     riskyOperation()
 catch err
-    print(err)
+    print(err.message)
 end
 
 print("Program continues")
@@ -446,11 +518,54 @@ print("Program continues")
 
 -   The `try` body runs normally.
 -   If a runtime error occurs, execution transfers to `catch`.
--   `err` receives error information.
+-   `err` receives an Object containing the error information below.
 -   Execution continues after the closing `end`.
 -   If no error occurs, `catch` is skipped.
--   Syntax errors are detected before execution and cannot be caught by
-    `try`/`catch`.
+-   A source buffer is fully lexed and parsed before any of it executes.
+    Its syntax errors cannot be caught by a handler in that buffer.
+    Imports load separate buffers during execution, so a surrounding
+    handler in the importer can catch a module's read, syntax, or
+    initialization failure. Failed modules remain eligible for retry.
+
+Syntax is `try ... catch name ... end`: exactly one handler and a required
+identifier. Empty bodies are allowed. Try and catch each have a separate
+lexical scope. The handler can see outer bindings, but not try-local
+variables. Its error binding is an ordinary mutable, unannotated local;
+it can shadow an outer binding without changing that binding. Escaped
+closures retain their captured try/catch locals under the usual rules.
+
+Completed assignments, collection mutations, and module side effects are
+preserved; catching an error is not a transaction. `return`, `break`, and
+`continue` retain their usual targets and do not enter a handler. An error
+in the handler propagates to the next enclosing try, or to the caller;
+it never reenters the same handler. Scopes and call/import contexts are
+restored on all these paths. Warnings alone do not enter a handler and
+already-emitted warnings are not suppressed.
+
+The error Object is a detached, mutable snapshot with these fields:
+
+| Field | Value |
+| --- | --- |
+| `message` | The original String message without location/trace decoration. |
+| `location` | An Object with `file`, `line`, and `column`, or nil when unavailable. |
+| `trace` | A List of `{description, location}` Objects, innermost call/import first, ending at the handler boundary. May be empty. |
+
+A location's `file` is the canonical path for file execution or `<source>`
+for interactive/source buffers. `line` and `column` are 1-based Numbers,
+or nil when that location has no span (for example, a file read failure).
+Each field exists even when its value is nil. Runtime positions identify
+the failing statement; lexical and syntax errors identify their token.
+Trace locations identify call/import sites. No live environments are
+exposed, and modifying one error snapshot does not change another error.
+
+`core.error(message)` still accepts only a String. Passing `err.message`
+raises a new error at that statement; structured rethrow and cause chains
+are not implemented. There is no `finally`/`defer` syntax yet. Catching
+Rust panics, stack exhaustion, allocation failure, or process termination
+is outside this mechanism. Cycle collection is separate (section 9.5);
+execution budgets remain work described in `RUNTIME_AUDIT.md`.
+
+Run `cargo run -- examples/error_handling.solx` for a working example.
 
 ### 12.2 `pcall()`
 
@@ -466,6 +581,26 @@ Stack trace. - Helpful suggestions when a likely fix can be identified.
 
 Formatting shown in examples is illustrative, not yet a stable CLI
 contract.
+
+Implemented diagnostics retain the original error message, a source
+location, and innermost-first function/import context. Syntax and lexical
+errors use the offending token position. Runtime errors use the start of
+the innermost failing statement; call contexts use the calling statement's
+position. These are 1-based line/column positions, not expression-level
+highlights. File execution uses canonical file paths, and closures retain
+their definition's file and statement positions after the source buffer
+is gone. Imports include the requested specifier and defining import base.
+
+Runtime diagnostics for `-e`, REPL buffers, and `run_source` use `<source>`
+with positions relative to that input buffer, including after an entry
+file ran. The REPL's direct parser diagnostics retain `at line:column`.
+Their import
+base still follows section 13; diagnostics do not mislabel interactive
+lines as lines of that file. AST statements constructed by Rust without
+source metadata have no precise position. `RuntimeError.message` contains
+only the original message; `location` and `contexts` hold structured
+metadata, and Display renders all three. Source excerpts, individual
+expression spans, unique REPL-buffer names, and suggestions are deferred.
 
 ## 13. Imports and modules
 
@@ -560,12 +695,27 @@ in cycle detection but are not inserted into the import cache. Loading
 is synchronous and follows statement execution order. Import cycles
 report the loading chain, including cycles through an entry file.
 
+The cache is a snapshot for the interpreter's lifetime, not hot reload:
+changing file contents does not reinitialize an already cached namespace.
+Each import still canonicalizes the requested path, so a deleted or
+unresolvable path errors even if that file was cached. Existing namespace
+values remain usable. Restoring a file at the same canonical path reuses
+the cached namespace; use a new Interpreter to load new contents.
+
 On read, parse, or initialization failure, the caller's environment and
 file context are restored and no incomplete module is cached. A later
 import can retry. Successful dependencies remain cached, and completed
 side effects (such as printed output or shared collection mutation) are
-not rolled back. Diagnostics identify the requested module and defining
-file; full runtime source maps and call stacks remain deferred.
+not rolled back. A closure published into a successful dependency before
+failure remains usable and retains its defining environment; failed
+module scopes therefore cannot simply be cleared. Diagnostics follow
+section 12.3, retaining the original error location through nested imports.
+
+An explicit `run_file` selects the persistent entry import base after
+path resolution, reading, and cycle checks succeed, even if parsing or
+execution subsequently fails. Completed entry-file mutations remain;
+entry execution is not a transaction. This policy is separate from
+restoring the caller after an imported file fails.
 
 The loader owns resolution, module identities, the cache, and the loading
 stack separately from expression evaluation. Both Rust providers and
@@ -629,8 +779,8 @@ collections even when held by a constant, matching existing property and
 index assignment: const protects a binding, not its contents. Assigning
 nil to variables still deletes bindings; nil in collections remains an
 entry until explicitly removed. Existing arithmetic, conversions, and
-equality are unchanged. Recursive/cyclic collection formatting and
-structural equality remain limitations of the current runtime.
+acyclic equality are unchanged; cyclic formatting and structural equality
+follow section 9.4.
 
 Random generation is deferred until seeding, reproducibility, generator
 state isolation, and cryptographic/noncryptographic API boundaries are
@@ -703,6 +853,10 @@ decisions subject to measurement.
 
 ## 18. Confirmed decisions checklist
 
+These are design decisions, not a completed-feature checklist. In particular,
+multiple returns, `pcall`, and the bytecode VM remain
+unimplemented. See [the language review](LANGUAGE_REVIEW.md) for current gaps.
+
 -   [x] Language name: Solx.
 -   [x] File extension: `.solx`.
 -   [x] Implementation language: Rust.
@@ -753,7 +907,7 @@ conversions, division-by-zero behaviour, and length operator semantics.
 (current constants protect bindings only). 8. Package resolution, hot
 reload, and untrusted-module capabilities beyond section 13.
 9. Exact `pcall()` result values. 10. Detailed runtime
-diagnostic format. 11. Garbage-collection algorithm and tuning. 12.
+diagnostic format. 11. Collector tuning and future heap representation. 12.
 Standard-library inventory and APIs. 13. CLI command design, project
 layout, and build/release process. 14. Benchmark suite, baseline
 versions, and acceptance thresholds.

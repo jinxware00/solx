@@ -61,11 +61,12 @@ function bindingsAt(tokens, offset) {
           if (tokens[p].kind === 'identifier') current().set(text(p), null);
         }
       }
-    } else if (['if', 'for', 'while'].includes(token.text)) {
+    } else if (['if', 'for', 'while', 'try'].includes(token.text)) {
       scopes.push(new Map());
       if (token.text === 'for' && tokens[i + 1]?.kind === 'identifier') current().set(text(i + 1), null);
-    } else if (['else', 'elseif'].includes(token.text) && scopes.length > 1) {
+    } else if (['else', 'elseif', 'catch'].includes(token.text) && scopes.length > 1) {
       scopes[scopes.length - 1] = new Map();
+      if (token.text === 'catch' && tokens[i + 1]?.kind === 'identifier') current().set(text(i + 1), null);
     } else if (token.text === 'end' && scopes.length > 1) {
       scopes.pop();
     } else if (['var', 'const', 'global'].includes(token.text) && tokens[i + 1]?.kind === 'identifier') {
@@ -117,7 +118,7 @@ function completions(source, offset) {
       ? types.map(label => ({ label, kind: 'TypeParameter', description: 'Variable type annotation, checked at runtime.' })) : [];
   } else if (previous?.kind === 'string' && preceding[preceding.length - 2]?.text === 'import') {
     entries = [{ label: 'as', kind: 'Keyword', description: 'Bind this import under a local alias.' }];
-  } else if (['var', 'global', 'const', 'fn', 'for', 'as'].includes(previous?.text)) {
+  } else if (['var', 'global', 'const', 'fn', 'for', 'as', 'catch'].includes(previous?.text)) {
     entries = [];
   } else {
     entries = Object.entries(keywords).map(([label, description]) => ({ label, description, kind: 'Keyword' }));
@@ -138,7 +139,7 @@ function hover(source, offset) {
   if (!tokens) return undefined;
   const index = tokens.findIndex(t => t.start <= offset && offset < t.end);
   const token = tokens[index];
-  if (token?.kind !== 'identifier' || tokens[index + 1]?.text === '=' || ['var', 'const', 'global', 'fn', 'for', 'as'].includes(tokens[index - 1]?.text)) return undefined;
+  if (token?.kind !== 'identifier' || tokens[index + 1]?.text === '=' || ['var', 'const', 'global', 'fn', 'for', 'as', 'catch'].includes(tokens[index - 1]?.text)) return undefined;
   const bindings = bindingsAt(tokens, token.start);
   let data;
   if (tokens[index - 1]?.text === '.') {

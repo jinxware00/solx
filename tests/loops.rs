@@ -454,7 +454,7 @@ fn manually_constructed_loop_control_cannot_escape_a_function_call() {
             "#,
         )
         .unwrap();
-        let Stmt::Function { function, .. } = &mut program.statements[0] else {
+        let Stmt::Function { function, .. } = program.statements[0].unlocated_mut() else {
             panic!("expected function declaration");
         };
         function.body.push(jump);

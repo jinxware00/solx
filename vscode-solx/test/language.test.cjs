@@ -7,8 +7,8 @@ const at = (source, needle) => hover(source, source.lastIndexOf(needle));
 
 test('confirmed keywords, built-ins, and valid construct snippets', () => {
   const items = complete('');
-  for (const name of ['var', 'fn', 'if', 'for', 'while', 'import', 'print', 'str', 'num']) assert.ok(items.some(item => item.label === name));
-  for (const name of ['pcall', 'try', 'catch', 'function', 'local', 'pairs', 'require', 'random']) assert.ok(!items.some(item => item.label === name));
+  for (const name of ['var', 'fn', 'if', 'for', 'while', 'import', 'try', 'catch', 'print', 'str', 'num']) assert.ok(items.some(item => item.label === name));
+  for (const name of ['pcall', 'function', 'local', 'pairs', 'require', 'random']) assert.ok(!items.some(item => item.label === name));
   assert.equal(items.find(item => item.label === 'print').kind, 'Function');
   assert.match(items.find(item => item.kind === 'Snippet' && item.label === 'fn').insertText, /^fn .*\n\t\$0\nend$/);
   assert.deepEqual(labels('pri'), ['print']);
@@ -16,6 +16,23 @@ test('confirmed keywords, built-ins, and valid construct snippets', () => {
   assert.deepEqual(labels('fn f(argument: '), []);
   assert.deepEqual(labels('import "math" '), ['as']);
   assert.deepEqual(labels('var '), []);
+  assert.deepEqual(labels('catch '), []);
+  assert.match(items.find(item => item.kind === 'Snippet' && item.label === 'try').insertText, /^try\n\t\$0\ncatch \$\{1:err\}\n\tprint\(\$\{1:err\}\.message\)\nend$/);
+});
+
+test('try and catch scopes keep completion and hover bindings separate', () => {
+  assert.deepEqual(labels('try import "math" catch err math.'), []);
+  assert.deepEqual(labels('try import "math" catch err end math.'), []);
+  assert.deepEqual(labels('try catch err import "math" end math.'), []);
+  assert.deepEqual(labels('import "math" try catch math math.'), []);
+  assert.deepEqual(labels('import "math" try catch math end math.sq'), ['sqrt']);
+  assert.deepEqual(labels('import "math" try var math = {} catch err math.sq'), ['sqrt']);
+  assert.equal(at('try catch print print(1) end', 'print'), undefined);
+  assert.equal(at('try catch print', 'print'), undefined);
+  assert.equal(at('try catch print end print(1)', 'print').signature, 'print(...)');
+  assert.deepEqual(labels('try catch err err.'), []);
+  assert.deepEqual(labels('try catch err -- try'), []);
+  assert.deepEqual(labels('var text = "try'), []);
 });
 
 test('completions and hover are quiet inside comments and both string forms', () => {

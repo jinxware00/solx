@@ -77,7 +77,10 @@ fn repl_reports_nested_runtime_errors_once_and_keeps_captured_state() {
     let stderr = String::from_utf8(output.stderr)
         .unwrap()
         .replace("\r\n", "\n");
-    assert_eq!(stderr, "Error: cannot convert 'found eof' to Number\n");
+    assert_eq!(
+        stderr,
+        "Error: cannot convert 'found eof' to Number at <source>:1:64\n  in <anonymous>() at <source>:1:12\n  in outer() at <source>:1:1\n"
+    );
     let stdout = String::from_utf8(output.stdout)
         .unwrap()
         .replace("\r\n", "\n");

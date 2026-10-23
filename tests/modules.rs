@@ -10,6 +10,64 @@ use solx::runtime::Value;
 
 static NEXT_PROJECT: AtomicU64 = AtomicU64::new(0);
 
+#[test]
+fn host_borrow_of_exposed_exports_reports_errors_without_losing_the_cache() {
+    let project = Project::new();
+    project.write(
+        "exposed.solx",
+        "exports.value = 7 exports.exposed = exports",
+    );
+    let reader = project.write(
+        "reader.solx",
+        "import './exposed.solx' as m\nexports.result = m.value",
+    );
+    let mut interpreter = project.interpreter();
+    interpreter
+        .run_source("import './exposed.solx' as m global exposed = m.exposed")
+        .unwrap();
+    let Value::Object(exports) = interpreter.get_global("exposed").unwrap() else {
+        panic!("expected exported map");
+    };
+    {
+        let _guard = exports.borrow_mut();
+        for source in ["global result = m.value", "global result = m['value']"] {
+            let error = interpreter.run_source(source).unwrap_err();
+            assert_eq!(
+                error.message,
+                "module export access: collection is mutably borrowed"
+            );
+            assert!(interpreter.get_global("result").is_none());
+        }
+        interpreter
+            .run_source("import './exposed.solx' as cached global same = cached == m")
+            .unwrap();
+        global(&interpreter, "same", Value::Boolean(true));
+        let error = interpreter
+            .run_source("import './reader.solx'")
+            .unwrap_err();
+        assert_eq!(
+            error.message,
+            "module export access: collection is mutably borrowed"
+        );
+        let location = error.location.unwrap();
+        assert_eq!(location.file, Some(reader.canonicalize().unwrap()));
+        assert_eq!(location.span.unwrap().line, 2);
+        assert_eq!(error.contexts.len(), 1);
+        assert!(
+            error.contexts[0]
+                .description
+                .contains("import './reader.solx'")
+        );
+    }
+    interpreter.run_source("global result = m.value").unwrap();
+    global(&interpreter, "result", Value::Number(7.0));
+    interpreter
+        .run_source("import './reader.solx' global retried = reader.result")
+        .unwrap();
+    global(&interpreter, "retried", Value::Number(7.0));
+    exports.borrow_mut().remove("exposed");
+}
+
 struct Project {
     root: PathBuf,
     temp_root: PathBuf,
@@ -68,6 +126,185 @@ impl Drop for Project {
 
 fn global(interpreter: &Interpreter, name: &str, expected: Value) {
     assert_eq!(interpreter.get_global(name), Some(expected), "{name}");
+}
+
+#[test]
+fn cli_reports_imported_function_file_location_and_call_context() {
+    let project = Project::new();
+    let entry = project.write("main.solx", "import './bad.solx'\nbad.fail()");
+    let bad = project.write("bad.solx", "exports.fail = fn()\n  num('bad')\nend");
+    let output = project.cli().arg(&entry).output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr)
+        .unwrap()
+        .replace("\r\n", "\n");
+    assert_eq!(
+        stderr,
+        format!(
+            "solx: cannot convert 'bad' to Number at {}:2:3\n  in <anonymous>() at {}:2:1\n",
+            bad.canonicalize().unwrap().display(),
+            entry.canonicalize().unwrap().display()
+        )
+    );
+}
+
+#[test]
+fn syntax_and_function_errors_report_definition_files_and_import_call_sites() {
+    let project = Project::new();
+    let entry = project.write("main.solx", "\nimport './lib/bad.solx' as bad");
+    let bad = project.write("lib/bad.solx", "var ok = 1\nvar broken = )");
+    let mut interpreter = Interpreter::new();
+    let error = interpreter.run_file(&entry).unwrap_err();
+    assert_eq!(error.message, "expected expression, found RightParen");
+    let location = error.location.as_ref().unwrap();
+    assert_eq!(
+        location.file.as_ref().unwrap(),
+        &bad.canonicalize().unwrap()
+    );
+    assert_eq!(
+        (location.span.unwrap().line, location.span.unwrap().column),
+        (2, 14)
+    );
+    let context = &error.contexts[0];
+    assert!(context.description.contains("import './lib/bad.solx'"));
+    assert_eq!(
+        context.location.as_ref().unwrap().file.as_ref().unwrap(),
+        &entry.canonicalize().unwrap()
+    );
+    assert_eq!(context.location.as_ref().unwrap().span.unwrap().line, 2);
+
+    project.write(
+        "lib/bad.solx",
+        "fn fail()\n  return num('bad')\nend\nexports.fail = fail",
+    );
+    interpreter.run_file(&entry).unwrap();
+    let error = interpreter.run_source("\nbad.fail()").unwrap_err();
+    assert_eq!(error.message, "cannot convert 'bad' to Number");
+    let location = error.location.as_ref().unwrap();
+    assert_eq!(
+        location.file.as_ref().unwrap(),
+        &bad.canonicalize().unwrap()
+    );
+    assert_eq!(
+        (location.span.unwrap().line, location.span.unwrap().column),
+        (2, 3)
+    );
+    assert_eq!(error.contexts[0].description, "in fail()");
+    let call_site = error.contexts[0].location.as_ref().unwrap();
+    assert!(
+        call_site.file.is_none(),
+        "interactive source is not main.solx"
+    );
+    assert_eq!(call_site.span.unwrap().line, 2);
+}
+
+#[test]
+fn nested_module_runtime_errors_keep_original_message_and_all_import_contexts() {
+    let project = Project::new();
+    let entry = project.write("main.solx", "import './a.solx'");
+    let a = project.write("a.solx", "\nimport './b.solx'");
+    let b = project.write("b.solx", "fn fail()\n  num('deep')\nend\nfail()");
+    let error = Interpreter::new().run_file(&entry).unwrap_err();
+    assert_eq!(error.message, "cannot convert 'deep' to Number");
+    assert_eq!(
+        error.location.as_ref().unwrap().file.as_ref().unwrap(),
+        &b.canonicalize().unwrap()
+    );
+    assert_eq!(error.contexts.len(), 3);
+    assert_eq!(error.contexts[0].description, "in fail()");
+    for (context, file, line) in [(&error.contexts[1], a, 2), (&error.contexts[2], entry, 1)] {
+        let location = context.location.as_ref().unwrap();
+        assert_eq!(
+            location.file.as_ref().unwrap(),
+            &file.canonicalize().unwrap()
+        );
+        assert_eq!(location.span.unwrap().line, line);
+    }
+}
+
+#[test]
+fn missing_import_from_an_escaped_closure_uses_its_definition_directory_and_position() {
+    let project = Project::new();
+    let library = project.write(
+        "lib/factory.solx",
+        "exports.make = fn()\n  return fn()\n    import './missing.solx'\n  end\nend",
+    );
+    let entry = project.write(
+        "main.solx",
+        "import './lib/factory.solx'\nvar load = factory.make()",
+    );
+    let mut interpreter = Interpreter::new();
+    interpreter.run_file(entry).unwrap();
+    let error = interpreter.run_source("load()").unwrap_err();
+    assert!(error.message.contains("missing.solx"));
+    assert!(
+        error
+            .message
+            .contains(&project.root.join("lib").display().to_string())
+    );
+    let location = error.location.as_ref().unwrap();
+    assert_eq!(
+        location.file.as_ref().unwrap(),
+        &library.canonicalize().unwrap()
+    );
+    assert_eq!(
+        (location.span.unwrap().line, location.span.unwrap().column),
+        (3, 5)
+    );
+    project.write("lib/missing.solx", "exports.ok = true");
+    interpreter.run_source("load()").unwrap();
+}
+
+#[test]
+fn successful_cache_is_a_snapshot_but_paths_must_still_resolve() {
+    let project = Project::new();
+    let path = project.write("cached.solx", "exports.value = 1");
+    let mut interpreter = project.interpreter();
+    interpreter
+        .run_source("import './cached.solx' as first")
+        .unwrap();
+    project.write("cached.solx", "exports.value = 2");
+    interpreter.run_source("import './cached.solx' as second global same = first == second global old = second.value").unwrap();
+    global(&interpreter, "same", Value::Boolean(true));
+    global(&interpreter, "old", Value::Number(1.0));
+    fs::remove_file(&path).unwrap();
+    let error = interpreter
+        .run_source("import './cached.solx' as third")
+        .unwrap_err();
+    assert!(error.message.contains("cannot resolve"));
+    interpreter
+        .run_source("global retained = first.value")
+        .unwrap();
+    global(&interpreter, "retained", Value::Number(1.0));
+    project.write("cached.solx", "exports.value = 3");
+    interpreter
+        .run_source("import './cached.solx' as third global original = third.value")
+        .unwrap();
+    global(&interpreter, "original", Value::Number(1.0));
+    let mut fresh = project.interpreter();
+    fresh
+        .run_source("import './cached.solx' global current = cached.value")
+        .unwrap();
+    global(&fresh, "current", Value::Number(3.0));
+}
+
+#[test]
+fn failed_module_may_leave_an_escaped_closure_in_a_successful_dependency() {
+    let project = Project::new();
+    project.write("holder.solx", "exports.state = {}");
+    project.write("bad.solx", "import './holder.solx'\nvar count = 7\nholder.state.read = fn() return count end\nnum('bad')");
+    let mut interpreter = project.interpreter();
+    interpreter.run_source("import './holder.solx'").unwrap();
+    assert!(interpreter.run_source("import './bad.solx'").is_err());
+    interpreter
+        .run_source("global retained = holder.state.read()")
+        .unwrap();
+    global(&interpreter, "retained", Value::Number(7.0));
+    project.write("bad.solx", "exports.ok = true");
+    interpreter
+        .run_source("import './bad.solx' global repaired = bad.ok")
+        .unwrap();
+    global(&interpreter, "repaired", Value::Boolean(true));
 }
 
 #[test]
@@ -198,10 +435,13 @@ fn imported_module_cannot_see_or_assign_callers_locals() {
             .run_source(&format!("import \"{name}.solx\""))
             .unwrap_err();
         assert!(
-            error.message.contains("undeclared variable 'secret'"),
+            error.to_string().contains("undeclared variable 'secret'"),
             "{error}"
         );
-        assert!(error.message.contains(&format!("{name}.solx")), "{error}");
+        assert!(
+            error.to_string().contains(&format!("{name}.solx")),
+            "{error}"
+        );
     }
     interpreter.run_source("global retained = secret").unwrap();
     global(&interpreter, "retained", Value::Number(42.0));
@@ -364,11 +604,11 @@ fn circular_imports_report_the_chain_and_can_be_retried_after_repair() {
     project.write("b.solx", r#"import "a.solx" exports.value = a.value"#);
     let mut interpreter = project.interpreter();
     let error = interpreter.run_source(r#"import "a.solx""#).unwrap_err();
-    assert!(error.message.contains("circular import:"), "{error}");
+    assert!(error.to_string().contains("circular import:"), "{error}");
     assert!(
-        error.message.contains("a.solx")
-            && error.message.contains("b.solx")
-            && error.message.contains(" -> "),
+        error.to_string().contains("a.solx")
+            && error.to_string().contains("b.solx")
+            && error.to_string().contains(" -> "),
         "{error}"
     );
     project.write("b.solx", "exports.value = 9");
@@ -386,12 +626,12 @@ fn direct_and_entry_file_cycles_fail_without_recursing() {
     let error = interpreter
         .run_source(r#"import "self.solx" as module"#)
         .unwrap_err();
-    assert!(error.message.contains("circular import:"), "{error}");
+    assert!(error.to_string().contains("circular import:"), "{error}");
     let entry = project.write("main.solx", r#"import "child.solx""#);
     project.write("child.solx", r#"import "./main.solx""#);
     let error = interpreter.run_file(entry).unwrap_err();
-    assert!(error.message.contains("circular import:"), "{error}");
-    assert!(error.message.contains("main.solx") && error.message.contains("child.solx"));
+    assert!(error.to_string().contains("circular import:"), "{error}");
+    assert!(error.to_string().contains("main.solx") && error.to_string().contains("child.solx"));
 }
 
 #[test]
@@ -409,8 +649,8 @@ fn missing_invalid_and_unreadable_imports_have_useful_errors() {
         (r#"import "bytes.solx""#, "cannot read"),
     ] {
         let error = interpreter.run_source(source).unwrap_err();
-        assert!(error.message.contains(fragment), "{source}: {error}");
-        assert!(error.message.contains("entry.solx"), "{error}");
+        assert!(error.to_string().contains(fragment), "{source}: {error}");
+        assert!(error.to_string().contains("entry.solx"), "{error}");
     }
     project.write("missing.solx", "exports.value = 1");
     interpreter
@@ -446,7 +686,10 @@ fn failed_module_initialization_restores_scopes_globals_and_path_context() {
         )
         .unwrap();
     let error = interpreter.run_source("caller()").unwrap_err();
-    assert!(error.message.contains("initialization failed") && error.message.contains("fail.solx"));
+    assert!(
+        error.to_string().contains("initialization failed")
+            && error.to_string().contains("fail.solx")
+    );
     interpreter
         .run_source(r#"global restored = visible import "good.solx" global value = good.value"#)
         .unwrap();
@@ -487,7 +730,8 @@ fn syntax_failures_are_not_cached_and_do_not_execute_partial_source() {
     let mut interpreter = project.interpreter();
     let error = interpreter.run_source(r#"import "bad.solx""#).unwrap_err();
     assert!(
-        error.message.contains("bad.solx") && error.message.contains("expected a parameter name"),
+        error.to_string().contains("bad.solx")
+            && error.to_string().contains("expected a parameter name"),
         "{error}"
     );
     project.write("bad.solx", "exports.value = 12");
@@ -538,7 +782,7 @@ fn exported_function_errors_preserve_modules_and_restore_the_importer() {
         .run_source(r#"var visible = "file" import "bad.solx""#)
         .unwrap();
     let error = interpreter.run_source("bad.fail()").unwrap_err();
-    assert!(error.message.contains("bad.solx") && error.message.contains("call failed"));
+    assert!(error.to_string().contains("bad.solx") && error.to_string().contains("call failed"));
     interpreter
         .run_source("global restored = visible global count = bad.count")
         .unwrap();
@@ -596,7 +840,9 @@ fn import_bindings_respect_constants_and_block_scope() {
         .run_source(r#"import "rebind.solx""#)
         .unwrap_err();
     assert!(
-        error.message.contains("cannot reassign constant 'exports'"),
+        error
+            .to_string()
+            .contains("cannot reassign constant 'exports'"),
         "{error}"
     );
 }

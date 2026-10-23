@@ -4,19 +4,24 @@ use solx::parser::parse;
 #[test]
 fn parses_while_with_nested_control_flow() {
     let program = parse("while true do if false then break else continue end end").unwrap();
-    let Stmt::While { condition, body } = &program.statements[0] else {
+    let Stmt::While { condition, body } = program.statements[0].unlocated() else {
         panic!("expected while loop");
     };
     assert_eq!(*condition, Expr::Boolean(true));
     let Stmt::If {
         branches,
         else_branch,
-    } = &body[0]
+    } = body[0].unlocated()
     else {
         panic!("expected nested if");
     };
-    assert_eq!(branches, &[(Expr::Boolean(false), vec![Stmt::Break])]);
-    assert_eq!(*else_branch, Some(vec![Stmt::Continue]));
+    assert_eq!(branches.len(), 1);
+    assert_eq!(branches[0].0, Expr::Boolean(false));
+    assert_eq!(branches[0].1.len(), 1);
+    assert_eq!(branches[0].1[0].unlocated(), &Stmt::Break);
+    let otherwise = else_branch.as_ref().unwrap();
+    assert_eq!(otherwise.len(), 1);
+    assert_eq!(otherwise[0].unlocated(), &Stmt::Continue);
 }
 
 #[test]
@@ -38,7 +43,7 @@ fn parses_numeric_for_with_optional_step() {
             limit,
             step,
             body,
-        } = &program.statements[0]
+        } = program.statements[0].unlocated()
         else {
             panic!("expected numeric for loop");
         };

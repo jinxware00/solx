@@ -12,7 +12,7 @@ completions, construct snippets, and API documentation follow the existing
 - **Completions** for implemented keywords, `print`, `str`, `num`, variable
   annotations, and explicitly imported standard modules, including aliases.
 - **Snippets** for named/anonymous functions, conditionals, numeric/while
-  loops, imports, and variable declarations. Trigger suggestions with Ctrl+Space.
+  loops, `try`/`catch`, imports, and variable declarations. Trigger suggestions with Ctrl+Space.
 - **Hover documentation** for recognized built-ins and the `core`, `math`,
   `string`, `list`, and `object` APIs, including signatures and constraints.
 - **Syntax highlighting**, `--` line comments, bracket matching, and automatic
@@ -137,10 +137,15 @@ expressions. Actual lexer, parser, and runtime errors appear in the output
 channel when you explicitly run a file. A future non-executing CLI interface
 is needed for accurate, debounced Problems-panel diagnostics.
 
-The existing grammar styles reserved `try`/`catch` and simple double-quoted
-`{name}` placeholders as documented, but those runtime features are not yet
-implemented. They are not offered as working snippets. Use concatenation
-(`..`) and `~=` for inequality. No formatting, debugger, or custom block
+The `try` snippet creates a handler that prints `err.message`. Catch bindings
+and the separate try/catch scopes are respected when recognizing APIs. These
+keywords require an interpreter built from the current source checkout;
+the earlier packaged 0.1.0 interpreter does not implement them. Use Cargo
+mode while developing this unreleased language change.
+
+The existing grammar also styles simple double-quoted `{name}` placeholders,
+but string interpolation remains unimplemented and is not offered as a
+working snippet. Use concatenation (`..`) and `~=` for inequality. No formatting, debugger, or custom block
 indentation/folding is provided. Colors depend on your theme.
 
 ## Develop, test, and package
