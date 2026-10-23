@@ -1,0 +1,13 @@
+import "list"
+import "string"
+import "./statistics.solx" as statistics
+
+var fields = string.split("30, 10, 20", ",")
+var values = []
+for i = 1, #fields do
+    list.append(values, num(fields[i]))
+end
+
+print("mean: " .. statistics.mean(values))
+list.sort(values)
+print("sorted: " .. str(values))

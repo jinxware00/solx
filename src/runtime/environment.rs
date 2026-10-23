@@ -19,6 +19,8 @@ type Scope = Rc<RefCell<HashMap<String, Binding>>>;
 pub struct Environment {
     scopes: Vec<Scope>,
     globals: Scope,
+    // Definition context travels with closures; it is never a Solx-visible value.
+    pub(crate) source_file: Option<std::path::PathBuf>,
 }
 
 impl Default for Environment {
@@ -32,6 +34,7 @@ impl Environment {
         Self {
             scopes: vec![Scope::default()],
             globals: Scope::default(),
+            source_file: None,
         }
     }
 
@@ -149,6 +152,7 @@ impl Environment {
             "Boolean" => matches!(value, Value::Boolean(_)),
             "List" => matches!(value, Value::List(_)),
             "Object" => matches!(value, Value::Object(_)),
+            "Module" => matches!(value, Value::Module(_)),
             "Function" => matches!(value, Value::Function(_) | Value::NativeFunction(_)),
             "Nil" => matches!(value, Value::Nil),
             _ => {

@@ -1,6 +1,5 @@
 use clap::Parser;
 use std::{
-    fs,
     io::{self, BufRead, Write},
     path::PathBuf,
     process::ExitCode,
@@ -55,12 +54,9 @@ fn run(cli: Cli) -> Result<(), String> {
     }
 
     if let Some(path) = cli.file {
-        let source = fs::read_to_string(&path)
-            .map_err(|error| format!("cannot read '{}': {error}", path.display()))?;
-
         interpreter
-            .run_source(&source)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
+            .run_file(&path)
+            .map_err(|error| error.to_string())?;
 
         executed = true;
     }

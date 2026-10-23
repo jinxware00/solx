@@ -14,6 +14,10 @@ pub enum DeclarationKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
+    Import {
+        specifier: String,
+        name: String,
+    },
     Function {
         name: String,
         function: Function,
@@ -30,6 +34,19 @@ pub enum Stmt {
     },
     Expression(Expr),
     Return(Vec<Expr>),
+    Break,
+    Continue,
+    While {
+        condition: Expr,
+        body: Vec<Stmt>,
+    },
+    NumericFor {
+        name: String,
+        start: Expr,
+        limit: Expr,
+        step: Option<Expr>,
+        body: Vec<Stmt>,
+    },
     If {
         branches: Vec<(Expr, Vec<Stmt>)>,
         else_branch: Option<Vec<Stmt>>,

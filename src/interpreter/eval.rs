@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::ops::ControlFlow;
+use std::path::Path;
 use std::rc::Rc;
 
+use crate::modules::{ModuleId, ModuleLoader};
 use crate::parser::ast::{BinaryOp, DeclarationKind, Expr, Function, Program, Stmt, UnaryOp};
 use crate::parser::parse;
-use crate::runtime::value::{NativeFunction, UserFunction};
+use crate::runtime::value::{ModuleValue, NativeFunction, UserFunction};
 use crate::runtime::{Environment, RuntimeError, Value};
 
 enum Jump {
@@ -17,6 +19,7 @@ type ExecutionResult = Result<ControlFlow<Jump>, RuntimeError>;
 
 pub struct Interpreter {
     environment: Environment,
+    modules: ModuleLoader,
 }
 
 impl Default for Interpreter {
@@ -27,6 +30,13 @@ impl Default for Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
+        Self {
+            environment: Self::fresh_environment(),
+            modules: ModuleLoader::default(),
+        }
+    }
+
+    fn fresh_environment() -> Environment {
         let mut environment = Environment::new();
         for function in [
             NativeFunction::Print,
@@ -43,7 +53,75 @@ impl Interpreter {
                 )
                 .expect("built-in function definitions are valid");
         }
-        Self { environment }
+        environment
+    }
+
+    /// Execute an entry file, retaining its path for subsequent interactive input.
+    /// Explicit entry execution is not cached, but participates in cycle detection.
+    pub fn run_file(&mut self, path: impl AsRef<Path>) -> Result<(), RuntimeError> {
+        let path = self.modules.entry_path(path.as_ref())?;
+        let source = ModuleLoader::read(&path)?;
+        let id = ModuleId::File(path.clone());
+        self.modules.begin(&id)?;
+        self.environment.source_file = Some(path.clone());
+        let result = self.run_source(&source);
+        self.modules.end(&id);
+        result.map_err(|error| RuntimeError::new(format!("{}: {error}", path.display())))
+    }
+
+    fn import(&mut self, specifier: &str) -> Result<Value, RuntimeError> {
+        let result = self.load_module(specifier);
+        result.map_err(|error| {
+            let origin = self
+                .environment
+                .source_file
+                .as_deref()
+                .map_or_else(|| "<source>".to_owned(), |p| p.display().to_string());
+            RuntimeError::new(format!("import '{specifier}' from '{origin}': {error}"))
+        })
+    }
+
+    fn load_module(&mut self, specifier: &str) -> Result<Value, RuntimeError> {
+        let id = self
+            .modules
+            .resolve(specifier, self.environment.source_file.as_deref())?;
+        if let Some(module) = self.modules.cached(&id)? {
+            return Ok(module);
+        }
+        self.modules.begin(&id)?;
+        let result = match &id {
+            ModuleId::Builtin(name) => crate::stdlib::module(name)
+                .ok_or_else(|| RuntimeError::new(format!("unknown built-in module '{name}'"))),
+            ModuleId::File(path) => self.execute_module(path),
+        };
+        // Clear in-progress state even after read, parse, or execution errors.
+        self.modules.end(&id);
+        if let Ok(module) = &result {
+            self.modules.cache(id, module.clone());
+        }
+        result
+    }
+
+    fn execute_module(&mut self, path: &Path) -> Result<Value, RuntimeError> {
+        let source = ModuleLoader::read(path)?;
+        let mut environment = Self::fresh_environment();
+        environment.source_file = Some(path.to_owned());
+        let exports = Rc::new(std::cell::RefCell::new(HashMap::new()));
+        environment.define(
+            "exports".into(),
+            Value::Object(exports.clone()),
+            true,
+            Some("Object".into()),
+            false,
+        )?;
+        let caller = std::mem::replace(&mut self.environment, environment);
+        let result = self.run_source(&source);
+        self.environment = caller;
+        result.map_err(|error| RuntimeError::new(format!("{}: {error}", path.display())))?;
+        Ok(Value::Module(Rc::new(ModuleValue {
+            name: path.display().to_string(),
+            exports,
+        })))
     }
 
     pub fn run_source(&mut self, source: &str) -> Result<(), RuntimeError> {
@@ -65,6 +143,11 @@ impl Interpreter {
 
     fn execute(&mut self, statement: &Stmt) -> ExecutionResult {
         match statement {
+            Stmt::Import { specifier, name } => {
+                let module = self.import(specifier)?;
+                self.environment
+                    .define(name.clone(), module, false, None, false)?;
+            }
             Stmt::Function { name, function } => {
                 let value = self.make_function(Some(name.clone()), function);
                 self.environment
@@ -347,9 +430,10 @@ impl Interpreter {
 
         match callee {
             Value::Function(function) => {
-                self.require_argument_count(
+                crate::stdlib::check_arity(
                     function.name.as_deref().unwrap_or("<anonymous>"),
                     &values,
+                    function.definition.parameters.len(),
                     function.definition.parameters.len(),
                 )?;
 
@@ -364,79 +448,25 @@ impl Interpreter {
                 let result = self.execute_statements(&function.definition.body);
                 // Restore the caller on both returns and runtime errors.
                 self.environment = caller;
-                match result? {
+                let flow = result.map_err(|error| match &function.closure.source_file {
+                    Some(path) => RuntimeError::new(format!(
+                        "{}: in {}(): {error}",
+                        path.display(),
+                        function.name.as_deref().unwrap_or("<anonymous>")
+                    )),
+                    None => error,
+                })?;
+                match flow {
                     ControlFlow::Break(Jump::Return(value)) => Ok(value),
                     ControlFlow::Continue(()) => Ok(Value::Nil),
                     ControlFlow::Break(jump) => Err(Self::unexpected_jump(jump)),
                 }
             }
-            Value::NativeFunction(function) => self.call_native(function, &values),
+            Value::NativeFunction(function) => crate::stdlib::call(function, &values),
             other => Err(RuntimeError::new(format!(
                 "cannot call {}; expected Function",
                 other.type_name()
             ))),
-        }
-    }
-
-    fn call_native(
-        &self,
-        function: NativeFunction,
-        values: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let name = function.name();
-        match function {
-            NativeFunction::Print => {
-                println!(
-                    "{}",
-                    values
-                        .iter()
-                        .map(Value::to_solx_string)
-                        .collect::<Vec<_>>()
-                        .join("\t")
-                );
-
-                Ok(Value::Nil)
-            }
-
-            NativeFunction::Str => {
-                self.require_argument_count(name, values, 1)?;
-                Ok(Value::String(values[0].to_solx_string()))
-            }
-
-            NativeFunction::Num => {
-                self.require_argument_count(name, values, 1)?;
-
-                match &values[0] {
-                    Value::Number(number) => Ok(Value::Number(*number)),
-                    Value::String(text) => {
-                        let number = text.trim().parse::<f64>().map_err(|_| {
-                            RuntimeError::new(format!("cannot convert '{text}' to Number"))
-                        })?;
-
-                        Ok(Value::Number(number))
-                    }
-                    other => Err(RuntimeError::new(format!(
-                        "num() cannot convert {} to Number",
-                        other.type_name()
-                    ))),
-                }
-            }
-        }
-    }
-
-    fn require_argument_count(
-        &self,
-        name: &str,
-        arguments: &[Value],
-        expected: usize,
-    ) -> Result<(), RuntimeError> {
-        if arguments.len() == expected {
-            Ok(())
-        } else {
-            Err(RuntimeError::new(format!(
-                "{name}() expects {expected} argument(s), got {}",
-                arguments.len()
-            )))
         }
     }
 
@@ -516,6 +546,10 @@ impl Interpreter {
 
     fn read_index(&self, object: Value, index: Value) -> Result<Value, RuntimeError> {
         match object {
+            Value::Module(module) => match index {
+                Value::String(key) => module.get(&key),
+                _ => Err(RuntimeError::new("module index must be a String")),
+            },
             Value::List(items) => {
                 let index = match index {
                     Value::Number(number)
@@ -569,6 +603,7 @@ impl Interpreter {
 
     fn read_property(&self, object: Value, name: &str) -> Result<Value, RuntimeError> {
         match object {
+            Value::Module(module) => module.get(name),
             Value::Object(properties) => match properties.borrow().get(name) {
                 Some(value) => Ok(value.clone()),
                 None => {
@@ -591,6 +626,9 @@ impl Interpreter {
             Expr::Property { object, name } => {
                 let object = self.evaluate(object)?;
 
+                if matches!(object, Value::Module(_)) {
+                    return Err(RuntimeError::new("module namespace is read-only"));
+                }
                 let Value::Object(properties) = object else {
                     return Err(RuntimeError::new("property assignment requires an Object"));
                 };
@@ -604,6 +642,7 @@ impl Interpreter {
                 let index = self.evaluate(index)?;
 
                 match object {
+                    Value::Module(_) => Err(RuntimeError::new("module namespace is read-only")),
                     Value::List(items) => {
                         let Value::Number(number) = index else {
                             return Err(RuntimeError::new("list index must be a number"));

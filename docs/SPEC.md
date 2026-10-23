@@ -100,9 +100,8 @@ end
 
 Globals belong to their own file. Importing a file does not merge its
 global namespace with the importing file's globals. Separate files may
-have globals with the same name without colliding. A module interface
-will be used to share values between files; exact export syntax remains
-unresolved.
+have globals with the same name without colliding. Values are shared
+explicitly through the module's `exports` object (section 13).
 
 ### 4.3 Constants
 
@@ -433,7 +432,7 @@ mutations are retained.
 
 ### 12.1 `try` / `catch`
 
-Solx supports `try`/`catch`.
+`try`/`catch` is planned; the current interpreter does not implement it.
 
 ``` lua
 try
@@ -455,9 +454,8 @@ print("Program continues")
 
 ### 12.2 `pcall()`
 
-`pcall()` is also supported for catching runtime errors through a
-function call. Its exact return values and behaviour are unresolved and
-must be documented before implementation.
+`pcall()` is planned for catching runtime errors through a function call.
+Its exact return values and behaviour remain unresolved.
 
 ### 12.3 Uncaught runtime errors
 
@@ -479,7 +477,6 @@ should be initialised, helping avoid unnecessary runtime overhead.
 
 ``` lua
 import "math"
-import "json"
 
 var result = math.sqrt(25)
 print(result)
@@ -504,21 +501,140 @@ import "math"
 -   Values are shared across files through an explicit module interface,
     not by merging globals.
 
-Unresolved module details: - Exact search paths and path
-normalisation. - Export syntax and visibility rules. - Whether imports
-are allowed only at file scope. - Import initialisation order. -
-Circular imports. - Failure behaviour for missing modules. - Whether
-repeated imports return a module object and the exact syntax for
-accessing exports.
+### 13.3 Module decisions
+
+The minimal syntax is `import "specifier"`, optionally followed by
+`as name`. `as` is contextual here, not a new reserved word. Imports are
+statements allowed in any scope, and the specifier must be a string
+literal. The default binding is the built-in module name or the file's
+stem; use an alias when that stem is not a valid Solx identifier. Imports
+use the same local binding/redeclaration checks as `var`.
+
+```lua
+-- counter.solx
+global count = 0
+fn increment()
+    count = count + 1
+    return count
+end
+exports.increment = increment
+
+-- main.solx
+import "./counter.solx" as counter
+print(counter.increment())
+```
+
+An imported file executes in a fresh environment with its own globals,
+file locals, and the existing `print`, `num`, and `str` built-ins. Its
+predefined local `const exports: Object = {}` holds public values; all
+other names remain private. No new export keyword or top-level return
+semantics are introduced. Closures retain their defining environment,
+including the defining file's path for imports made during later calls.
+
+Importing binds a `Module` value. Dot access and string-key indexing read
+its exports. A missing export is an error. Namespace properties cannot
+be assigned by importers; `Object` mutation helpers do not accept Module
+values. The defining file can update `exports` after initialization and
+importers see those updates. Exporting an ordinary scalar copies its
+current value, not its variable binding; exporting a list, object, or
+function shares that value. Mutable exported collections remain mutable.
+Modules compare by identity, are truthy, format as `<module name>`, and
+support the `Module` variable annotation. They are not Objects.
+
+Bare names resolve only registered Rust standard modules. Other
+specifiers must name an explicit `.solx` file; no extension guessing,
+directory entry search, environment search paths, or package downloads
+occur. Relative paths resolve against the defining file's directory.
+CLI entry files resolve from the process working directory; `-e`, plain
+REPL sessions, and `Interpreter::run_source` without a file context use
+the interpreter's initial working directory. A REPL entered after a file
+uses that file's directory. Absolute paths are accepted. `/` is the
+portable path separator; host-native paths also work. This loader is
+not a filesystem sandbox.
+
+File identities use canonical absolute paths (including resolved
+symlinks). Within one Interpreter, successful imports share one namespace
+and execute once, even through aliases or normalized paths. Entry files
+run explicitly through `run_file` are executed each time; they participate
+in cycle detection but are not inserted into the import cache. Loading
+is synchronous and follows statement execution order. Import cycles
+report the loading chain, including cycles through an entry file.
+
+On read, parse, or initialization failure, the caller's environment and
+file context are restored and no incomplete module is cached. A later
+import can retry. Successful dependencies remain cached, and completed
+side effects (such as printed output or shared collection mutation) are
+not rolled back. Diagnostics identify the requested module and defining
+file; full runtime source maps and call stacks remain deferred.
+
+The loader owns resolution, module identities, the cache, and the loading
+stack separately from expression evaluation. Both Rust providers and
+source files produce the same namespace value. Future package resolution
+can add a source provider without changing call evaluation or exports.
+Unresolved: package lookup integration, hot reload, asynchronous loading,
+and a capability model for untrusted code.
 
 ## 14. Standard library
 
-Standard libraries are bundled with Solx and imported explicitly. `math`
-and `json` are example library names; the complete standard-library
-inventory is not final.
+### 14.1 Existing built-ins and supported scope
 
-Potential libraries and capabilities need to be prioritised based on
-actual use cases. Libraries should not be initialised unless imported.
+`print(...)` prints tab-separated values plus a newline
+and returns nil; zero arguments print a blank line. `str(value)` accepts
+one value and uses the existing Solx formatting. `num(value)` accepts one
+Number or a trimmed numeric String, including the existing nonfinite
+number conversions; other types and invalid strings error. All three
+remain global, first-class, and shadowable, with unchanged diagnostics.
+There are no duplicate namespaced conversion aliases.
+
+The interpreter implements the five native modules below and the file
+imports in section 13. JSON, randomness, filesystem/process utilities,
+try/catch, and pcall remain deferred. No dependencies beyond the existing
+CLI dependency are added. Run `cargo run -- examples/modules/main.solx`
+for a two-file example that combines native APIs and a pure Solx utility.
+
+### 14.2 Standard module API
+
+These are registered Rust modules, initialized only when imported, not
+pretend `.solx` files. Functions are ordinary first-class Function values.
+All validate arity before types and report the qualified function name
+and argument position for invalid types. Arguments still evaluate once,
+left to right, before validation, following ordinary calls.
+
+| Module | API | Behaviour |
+| --- | --- | --- |
+| `core` | `type(value)` | Returns the annotation-style type name, including Nil, Function, and Module. |
+| `core` | `assert(condition[, message])` | Uses Solx truthiness; returns the condition on success, otherwise raises an error. Optional message must be String, even on success. |
+| `core` | `error(message)` | Raises a runtime error with the supplied String. |
+| `math` | `abs(x)`, `sqrt(x)`, `floor(x)`, `ceil(x)`, `round(x)` | Finite Number inputs; sqrt rejects negative numbers. Round uses nearest integer, halves away from zero. |
+| `math` | `min(...)`, `max(...)` | One or more finite Numbers. |
+| `math` | `pi` | Number constant. |
+| `string` | `len(text)` | Unicode scalar count, matching `#text`; not UTF-8 byte or grapheme count. |
+| `string` | `upper(text)`, `lower(text)`, `trim(text)` | Unicode case conversion and Unicode whitespace trimming; case conversion may change length. |
+| `string` | `slice(text, start, count)` | 1-based Unicode scalar start and nonnegative count. Both finite integers; range must fit. Start `len + 1` is valid only with zero count. |
+| `string` | `find(text, needle)` | First 1-based Unicode scalar position, or nil if absent. Empty needle returns 1. Literal, case-sensitive search. |
+| `string` | `split(text, separator)` | Literal nonempty separator; preserves empty fields, including trailing ones. Splitting empty text returns `[""]`. |
+| `string` | `join(items, separator)` | List of Strings and String separator; no coercion. Empty list returns empty String. |
+| `string` | `starts_with(text, prefix)`, `ends_with(text, suffix)` | Case-sensitive; empty prefix/suffix matches. |
+| `list` | `len(items)` | Number of entries, matching `#items`. |
+| `list` | `append(items, value)` | Mutates the shared list, including nil entries; returns nil. |
+| `list` | `remove(items, index)` | Removes and returns the entry, shifts later entries left. Index is a finite integer in `1..len`; invalid or empty-list removal errors. |
+| `list` | `find(items, value)` | First 1-based matching index using existing value equality; nil if absent. |
+| `list` | `sort(items)` | Stable, ascending, in-place sort of uniformly finite Numbers or uniformly Strings. Empty lists accepted. Mixed types, nonfinite numbers, and other types error before mutation. Returns nil; custom comparators deferred. |
+| `object` | `keys(object)` | A new List of keys sorted lexicographically for deterministic output. |
+| `object` | `has(object, key)` | Boolean; key must be String. A property holding nil still exists. |
+| `object` | `remove(object, key)` | Removes and returns the property, or nil when absent, without warning. |
+
+Lengths and indexes are Numbers. Collection helpers mutate shared
+collections even when held by a constant, matching existing property and
+index assignment: const protects a binding, not its contents. Assigning
+nil to variables still deletes bindings; nil in collections remains an
+entry until explicitly removed. Existing arithmetic, conversions, and
+equality are unchanged. Recursive/cyclic collection formatting and
+structural equality remain limitations of the current runtime.
+
+Random generation is deferred until seeding, reproducibility, generator
+state isolation, and cryptographic/noncryptographic API boundaries are
+specified. No implicit clock-seeded global generator is introduced.
 
 ## 15. Programming paradigms
 
@@ -535,6 +651,37 @@ A package manager is planned for a later stage. First implement and
 stabilise the language, runtime, and module system. Then design
 dependency manifests, package installation, version resolution, and
 third-party library distribution.
+
+The following is a proposed future design, not implemented tooling:
+
+- A project `solx.toml` declares package name, semantic version, entry
+  file, and dependencies. Sources are explicit local paths or registry
+  packages with version constraints. Names use lowercase ASCII segments,
+  optionally owner-qualified (`owner/name`), with no path traversal.
+- Resolve the complete graph before execution. Initially choose one
+  compatible version per package and report dependency chains on
+  conflicts. Prerelease rules and multiple-version coexistence remain open.
+- Store immutable packages in a local content-addressed cache, mapped
+  through the project lockfile. Importing never downloads code or searches
+  arbitrary working-directory packages. Local dependencies have explicit
+  canonical roots.
+- `solx.lock` records exact versions, sources, dependency edges, and
+  SHA-256 digests. Frozen installs reproduce that graph without resolving
+  versions. Offline execution uses verified installed content. Changed
+  local-path contents must be recorded or rejected in frozen mode.
+- Verify archives against locked digests before extraction. Reject
+  absolute paths, traversal, escaping symlinks, duplicate paths, and
+  excessive sizes. Extract temporarily and publish atomically. Digests
+  verify consistency; publisher authenticity needs a separate trust and
+  signature policy.
+- Installation only copies and verifies data: no lifecycle hooks, native
+  builds, or arbitrary installation scripts. Code runs when the user
+  runs/imports it. Verification is not a runtime sandbox; capability
+  restrictions need a separate design.
+
+Manifest parsing, resolution, lockfile tooling, registry protocol,
+authentication, signing, and install commands are deferred. This
+milestone does not download or install external packages.
 
 ## 17. Performance and benchmarking
 
@@ -602,10 +749,10 @@ function signatures, compatibility rules, and error timing. 3. String
 interpolation escaping and multiline-string syntax. 4. Equality rules
 across different types and for collections. 5. Numeric edge cases,
 conversions, division-by-zero behaviour, and length operator semantics.
-6. List index validation and collection mutation rules. 7. Constant
-behaviour for mutable objects/lists. 8. Module exports, module objects,
-resolution paths, caching, circular imports, and initialisation
-failures. 9. Exact `pcall()` result values. 10. Detailed runtime
+6. Broader collection operations beyond section 14. 7. Deep immutability
+(current constants protect bindings only). 8. Package resolution, hot
+reload, and untrusted-module capabilities beyond section 13.
+9. Exact `pcall()` result values. 10. Detailed runtime
 diagnostic format. 11. Garbage-collection algorithm and tuning. 12.
 Standard-library inventory and APIs. 13. CLI command design, project
 layout, and build/release process. 14. Benchmark suite, baseline

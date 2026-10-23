@@ -79,6 +79,9 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Stmt, ParseError> {
+        if self.matches(&TokenKind::Import) {
+            return self.parse_import();
+        }
         if self.check(&TokenKind::Fn)
             && !matches!(self.tokens[self.current + 1].kind, TokenKind::LeftParen)
         {
@@ -152,6 +155,48 @@ impl Parser {
         }
 
         Ok(Stmt::Expression(expression))
+    }
+
+    fn parse_import(&mut self) -> Result<Stmt, ParseError> {
+        let TokenKind::String(specifier) = &self.peek().kind else {
+            return Err(self.error("expected a string literal after 'import'"));
+        };
+        let specifier = specifier.clone();
+        self.advance();
+        if specifier.is_empty() || specifier.contains('\0') {
+            return Err(self.error_at_previous("import specifier must not be empty or contain NUL"));
+        }
+        let name = if matches!(&self.peek().kind, TokenKind::Identifier(name) if name == "as") {
+            self.advance();
+            self.consume_identifier("expected a module name after 'as'")?
+        } else {
+            let stem = std::path::Path::new(&specifier)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            let valid = tokenize(stem).is_ok_and(|tokens| {
+                matches!(
+                    &tokens[..],
+                    [
+                        Token {
+                            kind: TokenKind::Identifier(name),
+                            ..
+                        },
+                        Token {
+                            kind: TokenKind::Eof,
+                            ..
+                        }
+                    ] if name == stem
+                )
+            });
+            if !valid {
+                return Err(
+                    self.error_at_previous("module name is not an identifier; use 'as name'")
+                );
+            }
+            stem.to_owned()
+        };
+        Ok(Stmt::Import { specifier, name })
     }
 
     fn parse_declaration(&mut self, kind: DeclarationKind) -> Result<Stmt, ParseError> {

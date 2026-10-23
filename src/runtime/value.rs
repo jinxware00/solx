@@ -35,6 +35,7 @@ pub enum NativeFunction {
     Print,
     Str,
     Num,
+    Library(&'static crate::stdlib::LibraryFunction),
 }
 
 impl NativeFunction {
@@ -43,7 +44,35 @@ impl NativeFunction {
             Self::Print => "print",
             Self::Str => "str",
             Self::Num => "num",
+            Self::Library(function) => function.name(),
         }
+    }
+}
+
+pub struct ModuleValue {
+    pub(crate) name: String,
+    pub(crate) exports: Rc<RefCell<HashMap<String, Value>>>,
+}
+
+impl fmt::Debug for ModuleValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Module")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for ModuleValue {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
+
+impl ModuleValue {
+    pub(crate) fn get(&self, name: &str) -> Result<Value, super::RuntimeError> {
+        self.exports.borrow().get(name).cloned().ok_or_else(|| {
+            super::RuntimeError::new(format!("module '{}' has no export '{name}'", self.name))
+        })
     }
 }
 
@@ -57,6 +86,7 @@ pub enum Value {
     Object(Rc<RefCell<HashMap<String, Value>>>),
     Function(Rc<UserFunction>),
     NativeFunction(NativeFunction),
+    Module(Rc<ModuleValue>),
 }
 
 impl Value {
@@ -77,6 +107,7 @@ impl Value {
             Self::List(_) => "List",
             Self::Object(_) => "Object",
             Self::Function(_) | Self::NativeFunction(_) => "Function",
+            Self::Module(_) => "Module",
         }
     }
 
@@ -101,6 +132,7 @@ impl Value {
                 None => "<function>".to_owned(),
             },
             Self::NativeFunction(function) => format!("<function {}>", function.name()),
+            Self::Module(module) => format!("<module {}>", module.name),
             Self::List(items) => {
                 let items = items.borrow();
                 let contents = items
