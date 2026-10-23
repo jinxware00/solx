@@ -1,6 +1,6 @@
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use std::{
-    io::{self, BufRead, Write},
+    io::{self, BufRead, Read, Write},
     path::PathBuf,
     process::ExitCode,
 };
@@ -17,9 +17,12 @@ use solx::{
     name = "solx",
     version,
     about = "The Solx programming language",
-    long_about = "Solx: a programming language focused on performance and low memory usage."
+    long_about = "Solx: a programming language focused on performance and low memory usage.",
+    args_conflicts_with_subcommands = true
 )]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
     /// Execute source code passed directly on the command line
     #[arg(short = 'e', long = "execute", value_name = "CODE")]
     execute: Option<String>,
@@ -49,11 +52,96 @@ struct Cli {
     file: Option<PathBuf>,
 }
 
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Check syntax without executing code or resolving imports
+    Check(CheckArgs),
+}
+
+#[derive(Debug, Args)]
+struct CheckArgs {
+    /// Write one schema-versioned JSON result to stdout
+    #[arg(long)]
+    json: bool,
+
+    /// Read the current source buffer from stdin (up to 1 MiB)
+    #[arg(long, conflicts_with = "file")]
+    stdin: bool,
+
+    /// UTF-8 source file to check (up to 1 MiB)
+    #[arg(value_name = "FILE", required_unless_present = "stdin")]
+    file: Option<PathBuf>,
+}
+
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
+    let mut cli = Cli::parse();
+    if let Some(Command::Check(args)) = cli.command.take() {
+        return run_check(args);
+    }
+    match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("solx: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_check(args: CheckArgs) -> ExitCode {
+    use solx::check::{MAX_SOURCE_BYTES, check_source, json_report};
+    let source_name = args
+        .file
+        .as_ref()
+        .map_or_else(|| "<stdin>".into(), |path| path.display().to_string());
+    let read = || -> Result<String, String> {
+        let reader: Box<dyn Read> = match &args.file {
+            Some(path) => Box::new(
+                std::fs::File::open(path)
+                    .map_err(|error| format!("cannot open '{source_name}': {error}"))?,
+            ),
+            None => Box::new(io::stdin().lock()),
+        };
+        let mut bytes = Vec::new();
+        reader
+            .take(MAX_SOURCE_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| format!("cannot read '{source_name}': {error}"))?;
+        if bytes.len() > MAX_SOURCE_BYTES {
+            return Err(format!(
+                "check input exceeds {MAX_SOURCE_BYTES} UTF-8 bytes"
+            ));
+        }
+        String::from_utf8(bytes).map_err(|_| "check input must be valid UTF-8".into())
+    };
+    let source = match read() {
+        Ok(source) => source,
+        Err(error) => {
+            if args.json {
+                println!("{}", json_report(&source_name, None, Some(&error)));
+            } else {
+                eprintln!("solx: {error}");
+            }
+            return ExitCode::from(2);
+        }
+    };
+    match check_source(&source) {
+        Ok(()) => {
+            if args.json {
+                println!("{}", json_report(&source_name, None, None));
+            } else {
+                println!("No syntax errors in {source_name}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            if args.json {
+                println!("{}", json_report(&source_name, Some(&error), None));
+            } else {
+                eprintln!(
+                    "solx: {} at {source_name}:{}:{}",
+                    error.message, error.span.line, error.span.column
+                );
+            }
             ExitCode::FAILURE
         }
     }

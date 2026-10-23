@@ -88,14 +88,29 @@ pub struct LexError {
     pub message: String,
     pub line: usize,
     pub column: usize,
+    /// Half-open UTF-8 range of the offending token, when produced by the lexer.
+    pub span: Span,
 }
 
 impl LexError {
     pub fn new(message: impl Into<String>, line: usize, column: usize) -> Self {
+        Self::at(
+            message,
+            Span {
+                start: 0,
+                end: 0,
+                line,
+                column,
+            },
+        )
+    }
+
+    pub fn at(message: impl Into<String>, span: Span) -> Self {
         Self {
             message: message.into(),
-            line,
-            column,
+            line: span.line,
+            column: span.column,
+            span,
         }
     }
 }

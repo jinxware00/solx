@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (local package; unpublished)
+
+- Add live syntax diagnostics using the interpreter's non-executing JSON check
+  command, including unsaved/untitled buffers and Unicode byte-range conversion.
+- Add Check Current File, status reporting, debounce/timeout settings, trusted
+  workspace gating, cancellation, and stale-result suppression.
+- Keep checker failures separate from source errors; require the matching
+  source-built interpreter rather than falling back to running the buffer.
 
 - Add keyword completion and a snippet for the interpreter's new `try`/`catch`.
 - Recognize handler bindings and separate try/catch scopes for API completion

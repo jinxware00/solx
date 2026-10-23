@@ -292,7 +292,7 @@ impl Lexer {
     }
 
     fn error(&self, message: impl Into<String>) -> LexError {
-        LexError::new(message, self.token_line, self.token_column)
+        LexError::at(message, self.current_span())
     }
 }
 

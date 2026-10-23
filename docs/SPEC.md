@@ -642,6 +642,20 @@ proof for every host stack. Deep runtime value destruction remains recursive.
 See [EXECUTION_LIMITS.md](EXECUTION_LIMITS.md) for APIs, CLI options, counting,
 tested behavior, and remaining work toward an explicit execution stack.
 
+### 12.5 Non-executing syntax checking (implemented)
+
+`solx check FILE` and `solx check --json --stdin` use the real lexer and parser
+without constructing an interpreter. They do not execute code or resolve/load
+imports. They report the first lexer/parser error or existing syntax-depth
+limit, with preserved half-open UTF-8 byte ranges. Syntax checking does not
+check names, types, module availability, or runtime behavior.
+
+The CLI limits input to 1 MiB of UTF-8 source. JSON schema version 1 distinguishes
+valid input (exit 0), source diagnostics (exit 1), and input failures (exit 2).
+The schema, offset units, and editor integration are specified in
+[CHECKING.md](CHECKING.md). Lexer errors now retain byte ranges when converted
+to ParseError; this adds metadata without changing accepted syntax.
+
 ## 13. Imports and modules
 
 ### 13.1 Explicit imports

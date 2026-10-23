@@ -55,7 +55,9 @@ packaged host test, rebuilds the interpreter, then creates
 `dist/solx-0.1.0-windows-x64.zip` plus a JSON provenance/hash record. The ZIP
 contains the terminal scripts, executable, VSIX, official PNG, MIT license,
 installation guide, and checksums. Scripts download nothing. The standalone
-VSIX remains `vscode-solx/solx-language-support-0.2.1.vsix`.
+VSIX follows the extension version, currently
+`vscode-solx/solx-language-support-0.3.0.vsix`. Existing ZIPs may still contain
+0.2.1 until rebuilt and validated; a new standalone VSIX does not update them.
 
 `test.ps1` covers discovery and CLI argument/failure handling. `test-files.ps1`
 covers PATH edits, checksum validation, rollback, and backups. `test-install.ps1`

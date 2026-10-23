@@ -38,12 +38,7 @@ impl From<LexError> for ParseError {
         Self {
             message: error.message,
             limit: None,
-            span: Span {
-                start: 0,
-                end: 0,
-                line: error.line,
-                column: error.column,
-            },
+            span: error.span,
         }
     }
 }
@@ -51,6 +46,11 @@ impl From<LexError> for ParseError {
 /// Tokenizes and parses a complete Solx source file.
 pub fn parse(source: &str) -> Result<Program, ParseError> {
     parse_with_limits(source, ParseLimits::default())
+}
+
+/// Internal entry for checking already-tokenized input without lexing twice.
+pub(crate) fn parse_tokens(tokens: Vec<Token>) -> Result<Program, ParseError> {
+    Parser::new(tokens, ParseLimits::default()).parse_program()
 }
 
 /// Parse with lower limits; recursive-stack ceilings cannot be disabled/raised.

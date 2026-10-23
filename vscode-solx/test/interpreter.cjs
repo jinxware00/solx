@@ -20,6 +20,7 @@ test('verified CLI options and original example execute successfully', () => {
   assert.equal(help.status, 0);
   assert.match(help.stdout, /--execute/);
   assert.ok(!help.stdout.includes('--check'));
+  assert.match(help.stdout, /check/);
   const example = cp.spawnSync(binary, ['--', path.join(root, 'examples/hello.solx')], { encoding: 'utf8', windowsHide: true });
   assert.equal(example.status, 0, example.stderr);
   assert.match(example.stdout, /Greeted 3 people\./);
@@ -67,4 +68,21 @@ test('runner executes files with spaces, apostrophes, and shell metacharacters',
   const result = await startProcess({ executable: binary, args: ['--', file], cwd: fixture }, text => { output += text; }).completion;
   assert.equal(result.code, 0, output);
   assert.match(output, /path works/);
+});
+
+test('checker reads unsaved buffers and maps real Unicode lexer/parser ranges without execution', async () => {
+  const { startCheck } = require('../src/checker.cjs');
+  const launch = { executable: binary, args: ['check', '--json', '--stdin'], cwd: fixture };
+  for (const source of ["while true do end", "print('must not run') import './missing.solx'"]) {
+    assert.deepEqual(await startCheck(launch, source).completion, { diagnostics: [] });
+  }
+  const file = path.join(fixture, 'saved.solx');
+  fs.writeFileSync(file, 'var x=1');
+  for (const [source, bad, code] of [["var text='😀é'\r\nvar x=)", ')', 'parse-error'], ["var text='😀é'\r\n@", '@', 'lex-error']]) {
+    const { diagnostics } = await startCheck(launch, source).completion;
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0].code, code);
+    assert.equal(source.slice(diagnostics[0].start, diagnostics[0].end), bad);
+    assert.equal(fs.readFileSync(file, 'utf8'), 'var x=1');
+  }
 });

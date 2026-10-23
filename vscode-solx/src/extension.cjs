@@ -1,9 +1,11 @@
 const vscode = require('vscode');
 const { completions, hover } = require('./language.cjs');
 const { createLaunch, startProcess } = require('./runner.cjs');
+const { registerDiagnostics } = require('./diagnostics.cjs');
 
 function activate(context) {
   const output = vscode.window.createOutputChannel('Solx');
+  context.subscriptions.push(registerDiagnostics(vscode, output));
   let running = false;
   let stopRequested = false;
   let process;

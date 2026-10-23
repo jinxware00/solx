@@ -13,6 +13,8 @@ Automatic [cycle collection](docs/MEMORY_MANAGEMENT.md) reclaims unreachable
 closures and collections while preserving values held by Rust callers.
 [Execution limits and Ctrl+C cancellation](docs/EXECUTION_LIMITS.md) stop
 runaway evaluation and bound syntax, call, and import depth.
+Use `solx check file.solx` for [non-executing syntax checks](docs/CHECKING.md),
+also available as live diagnostics in the VS Code extension.
 
 ## Example
 

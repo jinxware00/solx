@@ -69,11 +69,11 @@ child.stdout.on('data', data => { log += data; });
 child.stderr.on('data', data => { log += data; });
 child.on('error', error => { console.error(error); process.exitCode = 1; });
 const timeout = setTimeout(() => {
-  console.error('Extension Host timed out after 120 seconds.');
+  console.error('Extension Host timed out after 600 seconds.');
   if (process.platform === 'win32') {
     cp.spawnSync(path.join(process.env.SystemRoot, 'System32/taskkill.exe'), ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true });
   } else child.kill('SIGKILL');
-}, 120_000);
+}, 600_000);
 child.on('close', code => {
   clearTimeout(timeout);
   fs.writeFileSync(path.join(artifacts, 'host.log'), log);

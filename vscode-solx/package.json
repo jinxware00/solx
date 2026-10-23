@@ -1,8 +1,8 @@
 {
   "name": "solx-language-support",
   "displayName": "Solx Language Support",
-  "description": "Syntax highlighting, run commands, completions, snippets, and hover documentation for Solx.",
-  "version": "0.2.1",
+  "description": "Syntax highlighting, live syntax diagnostics, run commands, completions, and hover documentation for Solx.",
+  "version": "0.3.0",
   "publisher": "jinxware00",
   "author": {
     "name": "jinxware00",
@@ -17,12 +17,13 @@
   "activationEvents": [
     "onLanguage:solx",
     "onCommand:solx.runCurrentFile",
-    "onCommand:solx.stopRun"
+    "onCommand:solx.stopRun",
+    "onCommand:solx.checkCurrentFile"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Highlighting, completions, and hover are available. Running code requires workspace trust.",
+      "description": "Highlighting, completions, and hover are available. Launching the interpreter for running or syntax checking requires workspace trust.",
       "restrictedConfigurations": [
         "solx.executablePath",
         "solx.cargoManifestPath"
@@ -45,6 +46,7 @@
     "syntax highlighting",
     "completion",
     "hover",
+    "diagnostics",
     "snippets"
   ],
   "repository": {
@@ -79,6 +81,12 @@
   },
   "contributes": {
     "commands": [
+      {
+        "command": "solx.checkCurrentFile",
+        "title": "Check Current File",
+        "category": "Solx",
+        "enablement": "isWorkspaceTrusted && editorLangId == solx"
+      },
       {
         "command": "solx.runCurrentFile",
         "title": "Run Current File",
@@ -121,17 +129,41 @@
           "type": "string",
           "default": "",
           "scope": "machine-overridable",
-          "markdownDescription": "Path to the Solx source checkout's `Cargo.toml`, absolute or relative to the file's workspace folder. When set, Cargo rebuilds before every run. Requires Cargo on PATH and an empty `solx.executablePath`."
+          "markdownDescription": "Path to the Solx source checkout's `Cargo.toml`, absolute or relative to the file's workspace folder. When set, Cargo rebuilds as needed before runs and syntax checks. Requires Cargo on PATH and an empty `solx.executablePath`."
         },
         "solx.completion.enabled": {
           "type": "boolean",
+          "scope": "resource",
           "default": true,
           "description": "Suggest confirmed keywords, APIs, type annotations, and code snippets."
         },
         "solx.hover.enabled": {
           "type": "boolean",
+          "scope": "resource",
           "default": true,
           "description": "Show reference documentation for recognized built-ins and imported standard-library members."
+        },
+        "solx.diagnostics.enabled": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": true,
+          "description": "Check file and untitled buffers with the real Solx lexer/parser in trusted workspaces. Requires an interpreter supporting check --json --stdin. No Solx code or imports are executed."
+        },
+        "solx.diagnostics.delayMs": {
+          "type": "number",
+          "scope": "resource",
+          "default": 350,
+          "minimum": 100,
+          "maximum": 5000,
+          "description": "Wait this many milliseconds after edits before checking syntax."
+        },
+        "solx.diagnostics.timeoutMs": {
+          "type": "number",
+          "scope": "resource",
+          "default": 30000,
+          "minimum": 1000,
+          "maximum": 120000,
+          "description": "Time allowed for a syntax check, including Cargo compilation. Increase for a cold source build."
         }
       }
     },
