@@ -24,6 +24,8 @@ fs.mkdirSync(path.join(root, '.test-artifacts'), { recursive: true });
 const artifacts = fs.mkdtempSync(path.join(root, '.test-artifacts/host-'));
 const workspace = path.join(artifacts, 'workspace');
 fs.mkdirSync(workspace);
+const temporary = path.join(artifacts, 'temp');
+fs.mkdirSync(temporary);
 const resultFile = path.join(artifacts, 'results.json');
 const extensionDir = path.join(artifacts, 'extensions');
 let extensionPath = root;
@@ -55,6 +57,10 @@ if (packaged) {
 }
 const env = { ...process.env, SOLX_HOST_RESULTS: resultFile, SOLX_EXTENSION_PATH: extensionPath,
   CARGO_TARGET_DIR: path.join(root, '.test-artifacts/cargo') };
+// Isolate all temporary snapshots so leaked source fails this run, without
+// inspecting or deleting temporary files owned by another editor/profile.
+if (process.platform === 'win32') { env.TEMP = temporary; env.TMP = temporary; }
+else env.TMPDIR = temporary;
 delete env.ELECTRON_RUN_AS_NODE;
 const child = cp.spawn(executable, [
   '--user-data-dir', path.join(artifacts, 'user-data'),
@@ -78,16 +84,19 @@ child.on('close', code => {
   clearTimeout(timeout);
   fs.writeFileSync(path.join(artifacts, 'host.log'), log);
   const report = fs.existsSync(resultFile) ? JSON.parse(fs.readFileSync(resultFile, 'utf8')) : undefined;
-  if (code !== 0 || !report?.success) {
+  const snapshots = fs.readdirSync(temporary).filter(file => file.startsWith('solx-check-'));
+  if (snapshots.length) console.error('Snapshot cleanup failed:', snapshots);
+  if (code !== 0 || !report?.success || snapshots.length) {
     console.error(log.slice(-8000));
     console.error(report || 'No Extension Host results were produced.');
     process.exitCode = 1;
   } else {
-    console.log(`VS Code ${report.vscode}: ${report.checks.length} Extension Host checks passed.`);
+    console.log(`VS Code ${report.vscode}: ${report.checks.length} Extension Host checks passed; no temporary snapshots remain.`);
     if (packaged) {
       const verified = JSON.parse(fs.readFileSync(path.join(artifacts, 'package.json'), 'utf8'));
       fs.writeFileSync(path.join(root, '.test-artifacts/package-validation.json'), JSON.stringify({
         sha256: verified.sha256, vscode: report.vscode, checks: report.checks.length, success: true,
+        snapshotsRemaining: snapshots.length,
       }, null, 2));
     }
   }

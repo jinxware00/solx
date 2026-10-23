@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
-const { decodeReport, startCheck, MAX_SOURCE_BYTES } = require('../src/checker.cjs');
+const { decodeReport, startCheck: check, MAX_SOURCE_BYTES } = require('../src/checker.cjs');
+const startCheck = (launch, source, options) => check({ args: [], ...launch }, source, { platform: 'linux', ...options });
 const { createLaunch } = require('../src/runner.cjs');
 const report = (diagnostics = []) => ({ schemaVersion: 1, offsetEncoding: 'utf-8', source: '<stdin>', ok: !diagnostics.length, diagnostics, error: null });
 const diagnostic = (start, end) => ({ severity: 'error', code: 'parse-error', message: 'expected expression', range: { start, end } });
@@ -35,9 +36,9 @@ test('check launch preserves executable discovery and Cargo freshness with no so
   const file = path.resolve('path with spaces', "quote' & file.solx");
   const dependencies = { findExecutable: async name => name, realpath: async value => value, stat: async () => ({ isFile: () => true }) };
   const launch = await createLaunch({ file, check: true }, dependencies);
-  assert.deepEqual(launch.args, ['check', '--json', '--stdin']);
+  assert.deepEqual(launch.args, ['check', '--json']);
   const cargo = await createLaunch({ file, check: true, workspace: path.dirname(file), cargoManifestPath: 'Cargo.toml' }, dependencies);
-  assert.deepEqual(cargo.args.slice(-4), ['--', 'check', '--json', '--stdin']);
+  assert.deepEqual(cargo.args.slice(-3), ['--', 'check', '--json']);
 });
 
 test('checker separates stderr from JSON, sends exact stdin, and reports EPIPE safely', async () => {
@@ -78,4 +79,89 @@ test('checker handles old CLIs, launch failures, output limits, timeouts and can
   const cancelled = startCheck({}, '', { start: () => ({ completion: Promise.resolve({ cancelled: true }), stop() {} }) });
   assert.deepEqual(await cancelled.completion, { cancelled: true });
   assert.throws(() => startCheck({}, ' '.repeat(MAX_SOURCE_BYTES + 1)), /1 MiB/);
+});
+
+test('Windows checks use a snapshot path as a separate argument, including Cargo launches', async () => {
+  for (const args of [['check', '--json'], ['run', '--manifest-path', 'Cargo.toml', '--', 'check', '--json']]) {
+    const file = path.resolve("space & quote' folder", 'buffer.solx');
+    const source = "var text='😀é'\r\n";
+    let disposed = 0, launched;
+    const run = startCheck({ args }, source, { platform: 'win32',
+      snapshot: async text => { assert.equal(text, source); return { file, async dispose() { disposed++; } }; },
+      start: (command, _output, options) => {
+        launched = command;
+        assert.equal(options.input, undefined);
+        options.onStdout(JSON.stringify({ ...report(), source: file }));
+        return { completion: Promise.resolve({ code: 0 }), stop() {} };
+      },
+    });
+    assert.deepEqual(await run.completion, { diagnostics: [] });
+    assert.deepEqual(launched.args, [...args, '--', file]);
+    assert.ok(!launched.args.includes(source));
+    assert.equal(disposed, 1);
+  }
+});
+
+test('cancellation and timeout during snapshot preparation prevent launching and clean up late files', async () => {
+  for (const timeout of [false, true]) {
+    let ready, disposed = 0, launches = 0;
+    const run = startCheck({}, 'var x=1', { platform: 'win32', timeoutMs: 10,
+      snapshot: () => new Promise(resolve => { ready = resolve; }),
+      start() { launches++; throw new Error('must not launch'); },
+    });
+    if (timeout) await assert.rejects(run.completion, /timed out/);
+    else run.stop();
+    ready({ file: 'snapshot.solx', async dispose() { disposed++; } });
+    if (!timeout) assert.deepEqual(await run.completion, { cancelled: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(disposed, 1); assert.equal(launches, 0);
+  }
+});
+
+test('Windows snapshots are removed after launch, process, protocol and output failures', async () => {
+  for (const failure of ['throw', 'launch', 'protocol', 'output']) {
+    let disposed = 0;
+    const run = startCheck({}, 'var x=1', { platform: 'win32',
+      snapshot: async () => ({ file: 'snapshot.solx', async dispose() { disposed++; } }),
+      start() {
+        if (failure === 'throw') throw new Error('spawn failed');
+        const result = failure === 'launch' ? { error: new Error('ENOENT') }
+          : failure === 'output' ? { truncated: true } : { code: 2 };
+        return { completion: Promise.resolve(result), stop() {} };
+      },
+    });
+    await assert.rejects(run.completion);
+    assert.equal(disposed, 1);
+  }
+});
+
+test('Windows cancellation and process timeouts remove snapshots even when termination throws', async () => {
+  for (const timeout of [false, true]) {
+    let disposed = 0, stopped = 0, finish;
+    const run = startCheck({}, 'var x=1', { platform: 'win32', timeoutMs: 10,
+      snapshot: async () => ({ file: 'snapshot.solx', async dispose() { disposed++; } }),
+      start: () => ({ completion: new Promise(resolve => { finish = resolve; }), stop() {
+        stopped++;
+        if (timeout) throw new Error('stop failed');
+        finish({ cancelled: true });
+      } }),
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    if (timeout) await assert.rejects(run.completion, /timed out/);
+    else { run.stop(); assert.deepEqual(await run.completion, { cancelled: true }); }
+    assert.equal(stopped, 1); assert.equal(disposed, 1);
+  }
+});
+
+test('snapshot preparation and cleanup failures are operational errors, not clean syntax results', async () => {
+  for (const failure of ['prepare', 'cleanup']) {
+    const run = startCheck({}, '', { platform: 'win32', snapshot: async () => {
+      if (failure === 'prepare') throw new Error('cannot create snapshot');
+      return { file: 'snapshot.solx', async dispose() { throw new Error('cannot remove snapshot'); } };
+    }, start: (_command, _output, options) => {
+      options.onStdout(JSON.stringify(report()));
+      return { completion: Promise.resolve({ code: 0 }), stop() {} };
+    } });
+    await assert.rejects(run.completion, /cannot (create|remove) snapshot/);
+  }
 });

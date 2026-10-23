@@ -36,11 +36,11 @@ end
 ## Install locally
 
 Requires VS Code 1.85 or later. This extension has not been published to the
-Marketplace. Build or obtain `solx-language-support-0.3.0.vsix`, then use
+Marketplace. Build or obtain `solx-language-support-0.3.1.vsix`, then use
 **Extensions: Install from VSIX...**, or:
 
 ```sh
-code --install-extension solx-language-support-0.3.0.vsix
+code --install-extension solx-language-support-0.3.1.vsix
 ```
 
 The extension identifier is `jinxware00.solx-language-support`. If you
@@ -137,11 +137,23 @@ closures called after later rebinding, arbitrary module-valued expressions,
 and file exports are not analyzed. Requests for documents over one million
 UTF-16 characters are skipped to keep the editor responsive.
 
-Live diagnostics use the interpreter's parse-only `check --json --stdin`
-interface. The exact current buffer is sent over stdin after 350 ms without
-edits; saving is unnecessary. The first lexer or parser error appears in the
+Live diagnostics use the interpreter's parse-only `check --json` interface.
+The exact current buffer is checked after 350 ms without edits; saving is
+unnecessary. The first lexer or parser error appears in the
 Problems panel and editor. A valid buffer clears the error. UTF-8 byte ranges
 are converted to VS Code's UTF-16 offsets, including emoji and CRLF text.
+
+On Windows, each check writes the buffer (including unsaved text) to a newly
+created directory under your user temporary directory, then runs
+`solx check --json -- <snapshot>`. This avoids the roughly 26-second startup
+stall measured with stdin checks on the development machine. Snapshots use
+exclusive file creation and the temporary directory's Windows access controls.
+They are removed after completion, errors, cancellation, or timeouts; normal
+extension shutdown waits for pending cleanup. Cleanup
+failures are reported with the path; a crash or OS access denial can leave a
+snapshot behind. Disable `solx.diagnostics.enabled` if you do not want unsaved
+buffers written to temporary files. Other platforms use `check --json --stdin`
+without creating snapshots. No buffer content is embedded in command arguments.
 
 Use **Solx: Check Current File** or click the Solx status-bar item to check
 immediately. The status bar distinguishes checking, syntax OK, errors, and an
@@ -154,8 +166,8 @@ Checks run one at a time. New edits, closing a document, disabling diagnostics,
 and changing interpreter settings cancel obsolete work. Late results never
 overwrite diagnostics for newer text. Only trusted local-file and untitled
 buffers up to 1 MiB of UTF-8 source are checked. Cargo mode rebuilds as needed
-using `cargo run ... -- check --json --stdin`; the configured Rust checkout
-must be trusted, including its build scripts.
+using `cargo run ... -- check --json` with the appropriate buffer input; the
+configured Rust checkout must be trusted, including its build scripts.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
@@ -199,7 +211,8 @@ npm run test:package -- 1.85.2
 ```
 
 - `npm test` checks TextMate scopes, completions, hover, runner behavior,
-  diagnostics/protocol/lifecycle handling, metadata, and local assets. It runs before packaging.
+  diagnostics/protocol/snapshot lifecycle handling, metadata, and local assets.
+  It runs before packaging.
 - `test:interpreter` builds the existing CLI with Cargo in `.test-artifacts`
   and runs valid/invalid programs, snippet defaults, and non-executing buffer
   checks with real byte ranges. It runs no Rust tests.
@@ -212,7 +225,8 @@ npm run test:package -- 1.85.2
   `npm run test:host -- 1.85.2` (network access required on the first run).
 - `test:package` installs the current VSIX into an isolated extension directory,
   checks every shipped file, and runs the host tests against that installed
-  copy. It accepts the same optional VS Code version as `test:host`.
+  copy. It also checks that no snapshots remain in the isolated temporary
+  directory after shutdown. It accepts the same optional VS Code version as `test:host`.
 - `npm run icon` uses Windows PowerShell and System.Drawing to resize the
   official `../assets/logo.png` into a transparent 512 x 512 `images/icon.png`.
   It preserves aspect ratio and the complete artwork, with clear space around

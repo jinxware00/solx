@@ -117,6 +117,22 @@ exports.run = async function () {
       await configure('diagnostics.enabled', true);
       assert.equal((await vscode.commands.executeCommand('solx.checkCurrentFile')).diagnostics, 1);
     });
+    await check('repeated warm checks avoid the Windows startup stall', async () => {
+      const document = await open("check speed & quote'.solx", 'var x=1');
+      const editor = vscode.window.activeTextEditor;
+      report.checkDurationsMs = [];
+      for (const [source, expected] of [['var x=)', 1], ['var x=1', 0], ['while true do end', 0]]) {
+        await editor.edit(edit => edit.replace(new vscode.Range(document.positionAt(0), document.positionAt(document.getText().length)), source));
+        const started = Date.now();
+        const result = await vscode.commands.executeCommand('solx.checkCurrentFile');
+        const elapsed = Date.now() - started;
+        report.checkDurationsMs.push(elapsed); record();
+        assert.equal(result.status, 'checked', JSON.stringify(result));
+        assert.equal(result.diagnostics, expected);
+        assert.ok(elapsed < 10000, `Warm syntax check took ${elapsed} ms; possible startup regression`);
+      }
+      assert.equal(fs.readFileSync(document.uri.fsPath, 'utf8'), 'var x=1');
+    });
     await check('nonzero parser exit is reported by the command', async () => {
       await open('invalid.solx', 'var broken = )');
       const result = await vscode.commands.executeCommand('solx.runCurrentFile');

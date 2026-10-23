@@ -49,7 +49,7 @@ async function createLaunch({ file, executablePath = '', cargoManifestPath = '',
       throw new Error('solx.cargoManifestPath must point to the Solx Cargo.toml file.');
     }
     const executable = await find('cargo', { workspace });
-    return { executable, args: ['run', '--quiet', '--locked', '--manifest-path', manifest, '--bin', 'solx', '--', ...(check ? ['check', '--json', '--stdin'] : [file])], cwd };
+    return { executable, args: ['run', '--quiet', '--locked', '--manifest-path', manifest, '--bin', 'solx', '--', ...(check ? ['check', '--json'] : [file])], cwd };
   }
   const executable = await find(executablePath || 'solx', { workspace });
   // Refuse build-tree binaries, including symlinks to them. Cargo mode checks
@@ -57,7 +57,8 @@ async function createLaunch({ file, executablePath = '', cargoManifestPath = '',
   if (isCargoArtifact(executable) || isCargoArtifact(await realpath(executable))) {
     throw new Error('This executable is in a Cargo target directory and may be stale. Set solx.cargoManifestPath to the Solx Cargo.toml and clear solx.executablePath to rebuild before running.');
   }
-  return { executable, args: check ? ['check', '--json', '--stdin'] : ['--', file], cwd };
+  // For checks, the checker appends the platform's buffer input arguments.
+  return { executable, args: check ? ['check', '--json'] : ['--', file], cwd };
 }
 
 function startProcess(launch, onOutput, { spawn = cp.spawn, platform = process.platform, env = process.env, kill = process.kill, maxOutput = 2_000_000, input, onStdout = onOutput, onStderr = onOutput } = {}) {

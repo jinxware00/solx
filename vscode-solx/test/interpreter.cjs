@@ -72,17 +72,26 @@ test('runner executes files with spaces, apostrophes, and shell metacharacters',
 
 test('checker reads unsaved buffers and maps real Unicode lexer/parser ranges without execution', async () => {
   const { startCheck } = require('../src/checker.cjs');
-  const launch = { executable: binary, args: ['check', '--json', '--stdin'], cwd: fixture };
+  const { createSnapshot } = require('../src/snapshot.cjs');
+  const snapshots = [];
+  const options = { snapshot: async source => {
+    const snapshot = await createSnapshot(source, { directory: fixture });
+    snapshots.push(snapshot.file);
+    return snapshot;
+  } };
+  const launch = { executable: binary, args: ['check', '--json'], cwd: fixture };
   for (const source of ["while true do end", "print('must not run') import './missing.solx'"]) {
-    assert.deepEqual(await startCheck(launch, source).completion, { diagnostics: [] });
+    assert.deepEqual(await startCheck(launch, source, options).completion, { diagnostics: [] });
   }
   const file = path.join(fixture, 'saved.solx');
   fs.writeFileSync(file, 'var x=1');
   for (const [source, bad, code] of [["var text='😀é'\r\nvar x=)", ')', 'parse-error'], ["var text='😀é'\r\n@", '@', 'lex-error']]) {
-    const { diagnostics } = await startCheck(launch, source).completion;
+    const { diagnostics } = await startCheck(launch, source, options).completion;
     assert.equal(diagnostics.length, 1);
     assert.equal(diagnostics[0].code, code);
     assert.equal(source.slice(diagnostics[0].start, diagnostics[0].end), bad);
     assert.equal(fs.readFileSync(file, 'utf8'), 'var x=1');
   }
+  if (process.platform === 'win32') assert.equal(snapshots.length, 4);
+  for (const snapshot of snapshots) assert.equal(fs.existsSync(path.dirname(snapshot)), false);
 });

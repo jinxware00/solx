@@ -1,5 +1,100 @@
 # Solx Language Support validation
 
+## 0.3.1 — Windows checker startup and snapshot cleanup
+
+Validated on Windows x64 on 2026-10-23, based on commit `828d447`.
+This extension update is unpublished and was validated before committing.
+
+The 26-second delay reproduced in a minimal Rust stdin reader before its
+`main` function began, including when stdin was an already-written file handle.
+The underlying Windows/environment cause is still unknown. File checks of
+temporary buffers completed in 0.396–0.493 seconds in the same unsandboxed
+environment. Version 0.3.1 uses that existing CLI interface on Windows;
+other platforms retain stdin. No Rust, parser, runtime, or JSON-schema changes
+were made.
+
+Each Windows check writes the exact UTF-8 buffer into a fresh temporary
+directory. Exclusive creation prevents overwriting another file. Cleanup covers
+completion, errors, cancellation, timeouts, and normal shutdown. Cancellation
+during creation prevents launching; obsolete requests still report cleanup
+failures. The README explains the temporary disk writes and the possibility of
+leftovers after a hard crash or denied cleanup.
+
+Results:
+
+- `npm test`: **57 passed**, including 11 additional tests for Windows input
+  arguments, snapshot bytes/permissions/lifecycle, partial-write failures,
+  cleanup failures, cancellation, timeouts, and awaited deactivation.
+- `npm run test:interpreter`, outside the sandbox: **6 passed**. Its four real
+  buffer checks took about **1.98 seconds total**, compared with about 103.85
+  seconds in the earlier stdin run. Snapshot directories were removed and the
+  saved document remained unchanged.
+- `npm run package` passed with its 57-test prepublish check.
+- Isolated installation and packaged-file comparisons passed in **VS Code
+  1.85.2 and 1.143.1**. All **15 automated desktop host checks passed in each**,
+  including live errors, dirty/untitled documents, non-execution, run/stop, and
+  repeated-check timing. Both closed with **zero temporary snapshots remaining**.
+- `git diff --check` passed. Rust checks were not rerun because this update
+  changes no Rust source or dependencies; the previous 261-test result is below.
+
+Final repeated-check timings, including any queued checks:
+
+| VS Code | First request | Second request | Third request |
+| --- | ---: | ---: | ---: |
+| 1.85.2 | 5,213 ms | 828 ms | 844 ms |
+| 1.143.1 | 5,338 ms | 896 ms | 849 ms |
+
+The first request waited for other open documents. Each request must finish in
+under ten seconds in the regression test; this is not a universal performance
+guarantee. The production timeout stays at 30 seconds. The desktop checks are
+automated tests in the actual editor, not a manual visual walkthrough.
+
+The initial 0.3.1 host tests exposed a shutdown cleanup race: subscription
+disposal alone did not wait for the active checker. Async deactivation fixed
+it. The three leftovers from those runs were matched against the test fixtures
+and removed. The final harness isolates its temporary directory and fails if
+any check snapshots survive shutdown.
+
+Final artifact: `vscode-solx/solx-language-support-0.3.1.vsix`, **109,258 bytes**;
+SHA-256 `3c0fde511ed08590c23c25f328ef2354bc70b80995e3ae7365339683f64a2932`.
+It includes all seven runtime modules and the unchanged icon, grammar, snippets,
+example, and license. Tests and probe artifacts are excluded.
+
+Detailed results are under this extension directory:
+
+- `.test-artifacts/host-Jzz2UC/` — final VS Code 1.85.2 run.
+- `.test-artifacts/host-Fxinjz/` — final VS Code 1.143.1 run.
+- `.test-artifacts/package-validation.json` — matching VSIX hash and zero-leak
+  receipt from the final run.
+
+Files changed for this update:
+
+```text
+docs/CHECKING.md
+docs/DEVELOPMENT.md
+vscode-solx/CHANGELOG.md
+vscode-solx/README.md
+vscode-solx/VALIDATION.md
+vscode-solx/package.json
+vscode-solx/package-lock.json
+vscode-solx/scripts/test-host.cjs
+vscode-solx/src/checker.cjs
+vscode-solx/src/diagnostics.cjs
+vscode-solx/src/extension.cjs
+vscode-solx/src/runner.cjs
+vscode-solx/src/snapshot.cjs (new)
+vscode-solx/test/checker.test.cjs
+vscode-solx/test/diagnostics.test.cjs
+vscode-solx/test/extension.test.cjs
+vscode-solx/test/host/index.cjs
+vscode-solx/test/interpreter.cjs
+vscode-solx/test/snapshot.test.cjs (new)
+```
+
+The original logos, unrelated logo edits, and `experiments/` remain untouched.
+Earlier VSIX/installer bundles are preserved; the installer was not rebuilt,
+and no normal VS Code profile or installed interpreter was updated.
+
 ## 0.3.0 — syntax checking and diagnostics
 
 Validated on Windows x64 on 2026-10-23. This package is unpublished.

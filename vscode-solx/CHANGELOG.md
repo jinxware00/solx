@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1 (local package; unpublished)
+
+- Avoid the measured Windows stdin startup delay by checking temporary buffer
+  snapshots with the existing file-check command. Other platforms retain stdin.
+- Remove snapshots after checks, failures, cancellation, and timeouts; prevent
+  launches cancelled during snapshot creation and report cleanup failures.
+- Wait for active checker cleanup during normal extension shutdown and validate
+  that desktop tests leave no snapshots in their isolated temporary directory.
+- Add snapshot lifecycle tests and a repeated-check desktop timing regression.
+  The CLI, JSON schema, language behavior, and interpreter discovery are unchanged.
+
 ## 0.3.0 (local package; unpublished)
 
 - Add live syntax diagnostics using the interpreter's non-executing JSON check

@@ -56,7 +56,7 @@ packaged host test, rebuilds the interpreter, then creates
 contains the terminal scripts, executable, VSIX, official PNG, MIT license,
 installation guide, and checksums. Scripts download nothing. The standalone
 VSIX follows the extension version, currently
-`vscode-solx/solx-language-support-0.3.0.vsix`. Existing ZIPs may still contain
+`vscode-solx/solx-language-support-0.3.1.vsix`. Existing ZIPs may still contain
 0.2.1 until rebuilt and validated; a new standalone VSIX does not update them.
 
 `test.ps1` covers discovery and CLI argument/failure handling. `test-files.ps1`

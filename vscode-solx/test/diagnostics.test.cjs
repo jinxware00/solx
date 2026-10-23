@@ -29,10 +29,11 @@ function host(overrides = {}) {
   };
   const controller = registerDiagnostics(vscode, output, {
     launch: async options => { launched.push(options); if (overrides.launch) return overrides.launch(options); return {}; },
-    start: (_launch, source) => {
+    start: (_launch, source, options) => {
       let finish, fail;
       const request = { source, completion: new Promise((resolve, reject) => { finish = resolve; fail = reject; }),
-        finish: value => finish(value), fail: error => fail(error), stopped: false, stop() { this.stopped = true; } };
+        finish: value => finish(value), fail: error => fail(error), cleanupError: options.onCleanupError,
+        stopped: false, stop() { this.stopped = true; } };
       requests.push(request); return request;
     },
   });
@@ -127,4 +128,31 @@ test('checker failures use status/output rather than fake source diagnostics and
   const pending = h.controller.request(h.doc, true); await tick();
   h.requests[2].finish({ diagnostics: [] });
   assert.equal((await pending).status, 'checked'); assert.deepEqual(h.result(), []);
+});
+
+test('cleanup failures from obsolete checks remain visible without stale source diagnostics', async t => {
+  const h = host(); t.after(() => h.controller.dispose());
+  const pending = h.controller.request(h.doc, true); await tick();
+  h.edit('var x=1');
+  h.requests[0].cleanupError(new Error('Could not remove snapshot at temporary-path'));
+  h.requests[0].finish(invalid);
+  assert.equal((await pending).status, 'cancelled'); await tick();
+  assert.equal(h.result(), undefined);
+  assert.ok(h.output.lines.some(line => line.includes('temporary-path')));
+});
+
+test('disposal waits for active checker cleanup and remains idempotent', async () => {
+  const h = host();
+  const pending = h.controller.request(h.doc, true); await tick();
+  let finished = false;
+  const disposal = h.controller.dispose();
+  assert.equal(h.controller.dispose(), disposal);
+  disposal.then(() => { finished = true; });
+  await tick();
+  assert.equal(finished, false);
+  assert.equal((await pending).status, 'cancelled');
+  h.requests[0].finish({ cancelled: true });
+  await disposal;
+  assert.equal(finished, true);
+  assert.equal(h.result(), undefined);
 });

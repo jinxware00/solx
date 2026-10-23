@@ -75,8 +75,9 @@ new field; its existing constructor remains available.
 
 ## VS Code integration
 
-Solx Language Support 0.3.0 sends the current buffer using
-`check --json --stdin`, including unsaved and untitled documents. The configured
+Solx Language Support 0.3.1 checks the current buffer, including unsaved and
+untitled documents. Windows uses `check --json -- <snapshot>` with an owned
+temporary file; other platforms use `check --json --stdin`. The configured
 executable must support schema v1. Cargo mode rebuilds the configured checkout
 before checks; no `target` binary is selected directly. An older installed
 interpreter is reported as unavailable for checking, without an execution
@@ -95,21 +96,37 @@ Use **Solx: Check Current File** for an immediate check. Settings and limitation
 are in [the extension README](../vscode-solx/README.md). These checks are syntax
 diagnostics, not a type checker, language server, debugger, or sandbox.
 
-The source changes and 0.3.0 VSIX are separate from earlier installer ZIPs and
+The source changes and current VSIX are separate from earlier installer ZIPs and
 installed binaries. Rebuild the interpreter to use this CLI. This milestone
 does not publish to the Marketplace or rebuild the installer bundle.
 
-### Windows validation limitation
+### Windows buffer transport
 
 On the development machine, stdin checks launched outside the command sandbox
 incurred roughly 26 seconds of Windows process-startup latency. This occurred
 both in desktop VS Code (1.85.2 and 1.143.1) and in standalone Node tests outside
 the sandbox. Inside the sandbox, the same checks completed in under a second.
 File checks and ordinary execution were substantially faster in the probes.
-The cause has not been established; changing argument order or pipe options
-did not resolve it. No such workarounds are included in the extension.
+The same delay was subsequently reproduced with a minimal Rust stdin reader,
+before its `main` function started, and with stdin provided as an already-written
+file handle. File checks of temporary valid/invalid buffers started in roughly
+0.4–0.5 seconds. The underlying OS/environment cause has not been established.
 
-This delays diagnostics on this host and needs investigation before release.
-The test harness allows ten minutes for the complete desktop suite and records
-individual check durations; the production check timeout remains 30 seconds.
-See [extension validation](../vscode-solx/VALIDATION.md) for observed results.
+Version 0.3.1 therefore uses file checks on Windows without changing the CLI,
+JSON schema, parser, or runtime. Each exact UTF-8 buffer is written exclusively
+to `buffer.solx` in a fresh `solx-check-*` directory under the user's temporary
+directory. Source is never inserted into command text, and the saved document
+is untouched. Windows access controls are inherited from the temporary directory.
+Cleanup removes only the owned file and empty directory, never recursively.
+
+Normal completion, errors, cancellation, and timeouts trigger cleanup. Requests
+cancelled during file creation cannot launch; late-created snapshots are removed.
+Normal extension shutdown waits for active checker cleanup before completing.
+Cleanup failures are operational failures with the location reported. A hard
+crash or denied cleanup can leave temporary source behind. Disable diagnostics
+to avoid these temporary writes. Other platforms retain stdin delivery.
+
+The harness records per-check timings and tests repeated warm checks against a
+10-second ceiling to detect recurrence of the 26-second stall. This is a test
+threshold, not a general performance guarantee. The production timeout remains
+30 seconds. See [extension validation](../vscode-solx/VALIDATION.md) for results.

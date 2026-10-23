@@ -2,7 +2,7 @@
   "name": "solx-language-support",
   "displayName": "Solx Language Support",
   "description": "Syntax highlighting, live syntax diagnostics, run commands, completions, and hover documentation for Solx.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "jinxware00",
   "author": {
     "name": "jinxware00",
@@ -147,7 +147,7 @@
           "type": "boolean",
           "scope": "resource",
           "default": true,
-          "description": "Check file and untitled buffers with the real Solx lexer/parser in trusted workspaces. Requires an interpreter supporting check --json --stdin. No Solx code or imports are executed."
+          "description": "Check buffers with the real Solx lexer/parser in trusted workspaces. Windows uses temporary buffer snapshots; other platforms use stdin. Requires Solx check --json support. No Solx code or imports are executed."
         },
         "solx.diagnostics.delayMs": {
           "type": "number",

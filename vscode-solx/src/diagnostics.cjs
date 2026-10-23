@@ -8,7 +8,7 @@ function registerDiagnostics(vscode, output, { launch = createLaunch, start = st
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 5);
   status.command = 'solx.checkCurrentFile';
   const jobs = new Map(), states = new Map(), reported = new Map();
-  let active, disposed = false;
+  let active, disposal, disposed = false;
   const key = document => document.uri.toString();
   const config = document => vscode.workspace.getConfiguration('solx', document.uri);
   const number = (value, fallback, minimum, maximum) => Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, value)) : fallback;
@@ -45,14 +45,21 @@ function registerDiagnostics(vscode, output, { launch = createLaunch, start = st
       const folder = vscode.workspace.getWorkspaceFolder(document.uri)
         || (vscode.workspace.workspaceFolders?.length === 1 ? vscode.workspace.workspaceFolders[0] : undefined);
       const workspace = folder?.uri.fsPath;
-      // Untitled input needs only a working directory. No temporary source file
-      // is created; the exact buffer travels over stdin, never command arguments.
+      // Untitled input needs only a working directory. The checker sends the
+      // buffer via stdin or an owned Windows snapshot, never as command text.
       const file = document.uri.scheme === 'file' ? document.uri.fsPath : path.join(workspace || os.tmpdir(), 'untitled.solx');
       const settings = config(document);
       const command = await launch({ file, workspace, check: true,
         executablePath: settings.get('executablePath', ''), cargoManifestPath: settings.get('cargoManifestPath', '') });
       if (!current(job)) return;
-      job.process = start(command, job.source, { timeoutMs: number(settings.get('diagnostics.timeoutMs'), 30000, 1000, 120000) });
+      job.process = start(command, job.source, {
+        timeoutMs: number(settings.get('diagnostics.timeoutMs'), 30000, 1000, 120000),
+        onCleanupError(error) {
+          // Active failures are reported below. Obsolete requests must still
+          // disclose a leftover snapshot, without publishing a source error.
+          if (!disposed && !current(job)) output.appendLine(error.message);
+        },
+      });
       const result = await job.process.completion;
       if (!current(job) || result.cancelled) return;
       const diagnostics = result.diagnostics.map(item => {
@@ -131,10 +138,15 @@ function registerDiagnostics(vscode, output, { launch = createLaunch, start = st
   ];
   refresh();
   return { request, dispose() {
+    if (disposed) return disposal;
     disposed = true;
+    const process = active?.process;
     for (const job of [...jobs.values()]) cancel(job.document);
+    try { process?.stop(); } catch (error) { output.appendLine(`Could not stop syntax check: ${error.message}`); }
     for (const subscription of subscriptions) subscription.dispose();
     states.clear(); reported.clear();
+    disposal = Promise.resolve(process?.completion).then(() => {}, () => {});
+    return disposal;
   } };
 }
 

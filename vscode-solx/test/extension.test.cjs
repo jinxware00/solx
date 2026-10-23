@@ -35,10 +35,16 @@ function host(overrides = {}) {
   };
   const file = path.resolve(__dirname, '../src/extension.cjs');
   const module = { exports: {} };
-  vm.runInNewContext(fs.readFileSync(file, 'utf8'), { module, require: name => name === 'vscode' ? fake : name === './runner.cjs' ? runner : name === './diagnostics.cjs' ? { registerDiagnostics: () => ({ dispose() {} }) } : createRequire(file)(name) }, { filename: file });
+  vm.runInNewContext(fs.readFileSync(file, 'utf8'), { module, require: name => name === 'vscode' ? fake : name === './runner.cjs' ? runner : name === './diagnostics.cjs' ? { registerDiagnostics: () => ({ dispose: () => overrides.cleanup }) } : createRequire(file)(name) }, { filename: file });
   module.exports.activate({ subscriptions: [] });
-  return { run: commands.get('solx.runCurrentFile'), stop: commands.get('solx.stopRun'), messages, launched, output, doc, stopped: () => stopped };
+  return { run: commands.get('solx.runCurrentFile'), stop: commands.get('solx.stopRun'), deactivate: module.exports.deactivate, messages, launched, output, doc, stopped: () => stopped };
 }
+
+test('deactivation returns the diagnostics cleanup promise for VS Code to await', () => {
+  const cleanup = Promise.resolve();
+  const h = host({ cleanup });
+  assert.equal(h.deactivate(), cleanup);
+});
 
 test('run refuses untrusted, untitled, virtual, and non-Solx documents', async () => {
   for (const overrides of [{ trusted: false }, { document: { isUntitled: true } }, { document: { uri: { scheme: 'git' } } }, { document: { languageId: 'text' } }]) {

@@ -1,4 +1,5 @@
 const { startProcess } = require('./runner.cjs');
+const { createSnapshot } = require('./snapshot.cjs');
 
 const MAX_SOURCE_BYTES = 1_048_576;
 const MAX_OUTPUT = 1_048_576;
@@ -7,7 +8,7 @@ const MAX_OUTPUT = 1_048_576;
 // JS offsets remain UTF-16; TextDocument.positionAt handles CRLF and lone CR.
 function decodeReport(source, stdout, code) {
   let report;
-  try { report = JSON.parse(stdout); } catch { throw new Error('No valid check response. Rebuild or update Solx to a version supporting check --json --stdin.'); }
+  try { report = JSON.parse(stdout); } catch { throw new Error('No valid check response. Rebuild or update Solx to a version supporting check --json.'); }
   if (report?.schemaVersion !== 1 || report.offsetEncoding !== 'utf-8' || typeof report.source !== 'string'
       || typeof report.ok !== 'boolean' || !Array.isArray(report.diagnostics) || report.diagnostics.length > 100) {
     throw new Error('Unsupported Solx check protocol. Rebuild or update the interpreter and extension together.');
@@ -39,20 +40,33 @@ function decodeReport(source, stdout, code) {
   });
 }
 
-function startCheck(launch, source, { start = startProcess, timeoutMs = 30000, ...dependencies } = {}) {
+function startCheck(launch, source, { start = startProcess, snapshot: prepare = createSnapshot,
+  platform = process.platform, timeoutMs = 30000, onCleanupError, ...dependencies } = {}) {
   if (Buffer.byteLength(source, 'utf8') > MAX_SOURCE_BYTES) throw new Error('Solx checking is limited to 1 MiB of UTF-8 source.');
-  let stdout = '', stderr = '', timedOut = false;
-  const run = start(launch, () => {}, { ...dependencies, input: source, maxOutput: MAX_OUTPUT,
-    onStdout: text => { stdout += text; }, onStderr: text => { stderr += text; } });
-  let timeout;
+  let stdout = '', stderr = '', timedOut = false, stopped = false, run, snapshot, disposal, timeout;
+  const dispose = () => snapshot && (disposal ||= snapshot.dispose());
+  const work = (async () => {
+    try {
+      // File checks avoid the measured Windows startup stall in stdin mode.
+      // Keep exact buffer bytes and the same non-executing JSON protocol.
+      if (platform === 'win32') snapshot = await prepare(source, { onCleanupError });
+      if (stopped || timedOut) return { cancelled: true };
+      const args = [...launch.args, ...(snapshot ? ['--', snapshot.file] : ['--stdin'])];
+      run = start({ ...launch, args }, () => {}, { ...dependencies, platform,
+        input: snapshot ? undefined : source, maxOutput: MAX_OUTPUT,
+        onStdout: text => { stdout += text; }, onStderr: text => { stderr += text; } });
+      const result = await run.completion;
+      return stopped ? { ...result, cancelled: true } : result;
+    } finally { await dispose(); }
+  })();
   const deadline = new Promise((_resolve, reject) => {
     timeout = setTimeout(() => {
       timedOut = true;
-      try { run.stop(); } catch { /* Still settle the request if termination fails. */ }
+      try { run?.stop(); } catch { /* Still settle the request if termination fails. */ }
       reject(new Error(`Solx check timed out after ${timeoutMs} ms. Check the interpreter configuration or increase solx.diagnostics.timeoutMs for a cold Cargo build.`));
     }, timeoutMs);
   });
-  const completion = Promise.race([run.completion, deadline]).then(result => {
+  const completion = Promise.race([work, deadline]).then(result => {
     if (timedOut) throw new Error(`Solx check timed out after ${timeoutMs} ms. Check the interpreter configuration or increase solx.diagnostics.timeoutMs for a cold Cargo build.`);
     if (result.cancelled) return { cancelled: true };
     if (result.error) throw new Error(`Could not launch Solx check: ${result.error.message}`);
@@ -63,8 +77,8 @@ function startCheck(launch, source, { start = startProcess, timeoutMs = 30000, .
     catch (error) { throw new Error(`${error.message}${stderr.trim() ? `\n${stderr.trim().slice(0, 2000)}` : ''}`); }
     if (result.inputError) throw new Error(`Could not send source to Solx check: ${result.inputError.message}`);
     return { diagnostics };
-  }).finally(() => clearTimeout(timeout));
-  return { completion, stop: run.stop };
+  }).finally(async () => { clearTimeout(timeout); await dispose(); });
+  return { completion, stop() { stopped = true; run?.stop(); } };
 }
 
 module.exports = { MAX_SOURCE_BYTES, decodeReport, startCheck };
