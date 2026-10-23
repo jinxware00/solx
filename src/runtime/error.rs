@@ -3,6 +3,14 @@ use std::path::{Path, PathBuf};
 
 use super::Value;
 use crate::lexer::Span;
+use crate::limits::LimitKind;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeErrorKind {
+    Language,
+    LimitExceeded(LimitKind),
+    Cancelled,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceLocation {
@@ -31,9 +39,11 @@ pub struct ErrorContext {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeError {
+    pub kind: RuntimeErrorKind,
     /// Original message, without source prefixes or call-stack decoration.
     pub message: String,
-    pub location: Option<SourceLocation>,
+    /// Keep cold diagnostic data off recursive Result stack frames.
+    pub location: Option<Box<SourceLocation>>,
     /// Innermost call/import first.
     pub contexts: Vec<ErrorContext>,
 }
@@ -41,10 +51,29 @@ pub struct RuntimeError {
 impl RuntimeError {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
+            kind: RuntimeErrorKind::Language,
             message: message.into(),
             location: None,
             contexts: Vec::new(),
         }
+    }
+
+    pub(crate) fn limit(kind: LimitKind, maximum: impl fmt::Display) -> Self {
+        Self {
+            kind: RuntimeErrorKind::LimitExceeded(kind),
+            ..Self::new(kind.message(maximum))
+        }
+    }
+
+    pub(crate) fn cancelled() -> Self {
+        Self {
+            kind: RuntimeErrorKind::Cancelled,
+            ..Self::new("execution cancelled")
+        }
+    }
+
+    pub fn is_catchable(&self) -> bool {
+        self.kind == RuntimeErrorKind::Language
     }
 
     /// A detached snapshot for a Solx catch binding; no live stack or scope links.
@@ -84,7 +113,7 @@ impl RuntimeError {
         Value::object(
             [
                 ("message".into(), Value::String(self.message.clone())),
-                ("location".into(), location_value(self.location.as_ref())),
+                ("location".into(), location_value(self.location.as_deref())),
                 (
                     "trace".into(),
                     Value::list(
@@ -115,10 +144,10 @@ impl RuntimeError {
 
     pub(crate) fn at(mut self, file: Option<&Path>, span: Option<Span>) -> Self {
         if self.location.is_none() {
-            self.location = Some(SourceLocation {
+            self.location = Some(Box::new(SourceLocation {
                 file: file.map(Path::to_owned),
                 span,
-            });
+            }));
         }
         self
     }

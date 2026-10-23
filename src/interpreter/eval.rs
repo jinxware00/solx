@@ -3,10 +3,15 @@ use std::ops::ControlFlow;
 use std::path::Path;
 use std::rc::Rc;
 
+use super::control::Control;
+use crate::limits::{CancellationToken, ExecutionLimits, LimitKind};
 use crate::modules::{ModuleId, ModuleLoader};
 use crate::parser::ast::{BinaryOp, DeclarationKind, Expr, Function, Program, Stmt, UnaryOp};
-use crate::parser::parse;
-use crate::runtime::error::SourceLocation;
+use crate::parser::{
+    depth::{Node, check_depth},
+    parse_with_limits,
+};
+use crate::runtime::error::{RuntimeErrorKind, SourceLocation};
 use crate::runtime::value::{ModuleValue, NativeFunction, UserFunction};
 use crate::runtime::{Environment, RuntimeError, Value, read_collection, write_collection};
 
@@ -22,6 +27,7 @@ pub struct Interpreter {
     environment: Environment,
     modules: ModuleLoader,
     current_location: Option<SourceLocation>,
+    control: Control,
 }
 
 impl Default for Interpreter {
@@ -42,11 +48,26 @@ impl Drop for Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self {
+        Self::with_limits(ExecutionLimits::default()).expect("default limits are valid")
+    }
+
+    pub fn with_limits(limits: ExecutionLimits) -> Result<Self, RuntimeError> {
+        limits.validate().map_err(RuntimeError::new)?;
+        Ok(Self {
             environment: Self::fresh_environment(),
             modules: ModuleLoader::default(),
             current_location: None,
-        }
+            control: Control::new(limits),
+        })
+    }
+
+    pub fn limits(&self) -> ExecutionLimits {
+        self.control.limits
+    }
+
+    /// Clone this token to request cooperative cancellation from another thread.
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.control.cancellation.clone()
     }
 
     fn fresh_environment() -> Environment {
@@ -72,6 +93,7 @@ impl Interpreter {
     /// Execute an entry file, retaining its path for subsequent interactive input.
     /// Explicit entry execution is not cached, but participates in cycle detection.
     pub fn run_file(&mut self, path: impl AsRef<Path>) -> Result<(), RuntimeError> {
+        self.control.begin_run()?;
         let path = self.modules.entry_path(path.as_ref())?;
         let source = ModuleLoader::read(&path)?;
         let id = ModuleId::File(path.clone());
@@ -98,23 +120,31 @@ impl Interpreter {
     }
 
     fn load_module(&mut self, specifier: &str) -> Result<Value, RuntimeError> {
+        self.control.check_cancelled()?;
         let id = self
             .modules
             .resolve(specifier, self.environment.source_file.as_deref())?;
         if let Some(module) = self.modules.cached(&id)? {
             return Ok(module);
         }
-        self.modules.begin(&id)?;
-        let result = match &id {
+        self.control.enter_import()?;
+        let result = self.load_uncached_module(&id);
+        self.control.leave_import();
+        if let Ok(module) = &result {
+            self.modules.cache(id, module.clone());
+        }
+        result
+    }
+
+    fn load_uncached_module(&mut self, id: &ModuleId) -> Result<Value, RuntimeError> {
+        self.modules.begin(id)?;
+        let result = match id {
             ModuleId::Builtin(name) => crate::stdlib::module(name)
                 .ok_or_else(|| RuntimeError::new(format!("unknown built-in module '{name}'"))),
             ModuleId::File(path) => self.execute_module(path),
         };
         // Clear in-progress state even after read, parse, or execution errors.
-        self.modules.end(&id);
-        if let Ok(module) = &result {
-            self.modules.cache(id, module.clone());
-        }
+        self.modules.end(id);
         result
     }
 
@@ -142,27 +172,53 @@ impl Interpreter {
     }
 
     pub fn run_source(&mut self, source: &str) -> Result<(), RuntimeError> {
+        self.control.begin_run()?;
         self.run_source_in(source, None)
     }
 
     fn run_source_in(&mut self, source: &str, file: Option<&Path>) -> Result<(), RuntimeError> {
-        let program = parse(source)
-            .map_err(|error| RuntimeError::new(error.message).at(file, Some(error.span)))?;
+        self.control.check_cancelled()?;
+        let program = parse_with_limits(source, self.control.limits.parse).map_err(|error| {
+            let kind = error
+                .limit
+                .map_or(RuntimeErrorKind::Language, RuntimeErrorKind::LimitExceeded);
+            RuntimeError {
+                kind,
+                ..RuntimeError::new(error.message).at(file, Some(error.span))
+            }
+        })?;
+        self.control.check_cancelled()?;
 
         let previous = std::mem::replace(
             &mut self.environment.diagnostic_file,
             file.map(Path::to_owned),
         );
-        let result = self.run_program(&program);
+        let result = self.execute_program(&program);
         self.environment.diagnostic_file = previous;
         result
     }
 
     pub fn run_program(&mut self, program: &Program) -> Result<(), RuntimeError> {
+        self.control.begin_run()?;
+        // Host-created ASTs must be checked before function cloning/evaluation.
+        for statement in &program.statements {
+            check_depth(
+                Node::Statement(statement),
+                self.control.limits.parse.max_ast_depth,
+            )
+            .map_err(|span| {
+                RuntimeError::limit(LimitKind::AstDepth, self.control.limits.parse.max_ast_depth)
+                    .at(self.environment.diagnostic_file.as_deref(), span)
+            })?;
+        }
+        self.execute_program(program)
+    }
+
+    fn execute_program(&mut self, program: &Program) -> Result<(), RuntimeError> {
         let result = self.execute_statements(&program.statements);
         crate::runtime::collect_garbage();
         match result? {
-            ControlFlow::Continue(()) => Ok(()),
+            ControlFlow::Continue(()) => self.control.check_cancelled(),
             ControlFlow::Break(jump) => Err(Self::unexpected_jump(jump)),
         }
     }
@@ -191,6 +247,13 @@ impl Interpreter {
     }
 
     fn execute_unlocated(&mut self, statement: &Stmt) -> ExecutionResult {
+        self.control.enter_evaluation()?;
+        let result = self.execute_kind(statement);
+        self.control.leave_evaluation();
+        result
+    }
+
+    fn execute_kind(&mut self, statement: &Stmt) -> ExecutionResult {
         match statement {
             Stmt::Located { .. } => unreachable!("source metadata handled by execute"),
             Stmt::Import { specifier, name } => {
@@ -257,7 +320,8 @@ impl Interpreter {
                 // keep their normal targets. The try scope is already restored.
                 let error = match self.execute_block(body) {
                     Ok(flow) => return Ok(flow),
-                    Err(error) => error,
+                    Err(error) if error.is_catchable() => error,
+                    Err(interruption) => return Err(interruption),
                 };
                 self.environment.begin_scope();
                 let result = self
@@ -271,6 +335,7 @@ impl Interpreter {
 
             Stmt::While { condition, body } => {
                 while self.evaluate(condition)?.is_truthy() {
+                    self.control.step()?;
                     match self.execute_block(body)? {
                         ControlFlow::Break(Jump::Break) => break,
                         flow @ ControlFlow::Break(Jump::Return(_)) => return Ok(flow),
@@ -353,6 +418,7 @@ impl Interpreter {
         } else {
             counter >= limit
         } {
+            self.control.step()?;
             // A new binding per iteration keeps escaped closures independent.
             self.environment.begin_scope();
             let result = self
@@ -408,6 +474,13 @@ impl Interpreter {
     }
 
     fn evaluate(&mut self, expression: &Expr) -> Result<Value, RuntimeError> {
+        self.control.enter_evaluation()?;
+        let result = self.evaluate_inner(expression);
+        self.control.leave_evaluation();
+        result
+    }
+
+    fn evaluate_inner(&mut self, expression: &Expr) -> Result<Value, RuntimeError> {
         match expression {
             Expr::Function(function) => Ok(self.make_function(None, function)),
             Expr::Nil => Ok(Value::Nil),
@@ -513,17 +586,11 @@ impl Interpreter {
                     function.definition.parameters.len(),
                 )?;
 
-                // Only the definition's scopes and a fresh call scope are visible.
-                let mut environment = function.closure.clone();
-                environment.begin_scope();
-                for (name, value) in function.definition.parameters.iter().zip(values) {
-                    environment.define(name.clone(), value, false, None, false)?;
-                }
-
-                let caller = std::mem::replace(&mut self.environment, environment);
-                let result = self.execute_statements(&function.definition.body);
-                // Restore the caller on both returns and runtime errors.
-                self.environment = caller;
+                let result = self.control.enter_call().and_then(|()| {
+                    let result = self.call_function(&function, values);
+                    self.control.leave_call();
+                    result
+                });
                 let flow = result.map_err(|error| {
                     error.context(
                         format!("in {}()", function.name.as_deref().unwrap_or("<anonymous>")),
@@ -542,6 +609,20 @@ impl Interpreter {
                 other.type_name()
             ))),
         }
+    }
+
+    fn call_function(&mut self, function: &UserFunction, values: Vec<Value>) -> ExecutionResult {
+        // Only the definition's scopes and a fresh call scope are visible.
+        let mut environment = function.closure.clone();
+        environment.begin_scope();
+        for (name, value) in function.definition.parameters.iter().zip(values) {
+            environment.define(name.clone(), value, false, None, false)?;
+        }
+        let caller = std::mem::replace(&mut self.environment, environment);
+        let result = self.execute_statements(&function.definition.body);
+        // Restore the caller on returns, language errors, and interruptions.
+        self.environment = caller;
+        result
     }
 
     fn evaluate_binary(

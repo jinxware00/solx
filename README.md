@@ -11,6 +11,8 @@ The [language review](docs/LANGUAGE_REVIEW.md) records current gaps, lessons
 from the official Lua source, and the next development priorities.
 Automatic [cycle collection](docs/MEMORY_MANAGEMENT.md) reclaims unreachable
 closures and collections while preserving values held by Rust callers.
+[Execution limits and Ctrl+C cancellation](docs/EXECUTION_LIMITS.md) stop
+runaway evaluation and bound syntax, call, and import depth.
 
 ## Example
 

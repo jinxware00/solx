@@ -4,7 +4,10 @@
 Automatic cycle collection is now implemented; see
 [MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md) for the current ownership contract,
 algorithm, tests, and remaining limitations. The earlier leak probes have been
-updated to assert reclamation. Stack/execution limits remain unresolved.
+updated to assert reclamation. [Execution and syntax limits plus cancellation](EXECUTION_LIMITS.md)
+are also now implemented; arbitrary host graphs, native-operation budgets, and
+recursive runtime-value destruction remain limitations. The audit below records
+the earlier baseline, rather than the current implementation of these guards.
 
 This audit covers the existing tree-walking interpreter. It introduces no
 collector, unsafe code, dependencies, bytecode execution, or new language

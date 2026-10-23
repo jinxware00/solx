@@ -3,17 +3,22 @@
 //! Converts lexer tokens into an abstract syntax tree.
 
 pub mod ast;
+pub(crate) mod depth;
 
 use std::fmt;
 use std::mem::discriminant;
 
 use crate::lexer::{LexError, Span, Token, TokenKind, tokenize};
+use crate::limits::{LimitKind, ParseLimits};
 use ast::{BinaryOp, DeclarationKind, Expr, Function, Program, Stmt, UnaryOp};
+use depth::{Node, check_depth};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     pub message: String,
     pub span: Span,
+    /// Resource limits are distinct from ordinary syntax errors.
+    pub limit: Option<LimitKind>,
 }
 
 impl fmt::Display for ParseError {
@@ -32,6 +37,7 @@ impl From<LexError> for ParseError {
     fn from(error: LexError) -> Self {
         Self {
             message: error.message,
+            limit: None,
             span: Span {
                 start: 0,
                 end: 0,
@@ -44,8 +50,23 @@ impl From<LexError> for ParseError {
 
 /// Tokenizes and parses a complete Solx source file.
 pub fn parse(source: &str) -> Result<Program, ParseError> {
+    parse_with_limits(source, ParseLimits::default())
+}
+
+/// Parse with lower limits; recursive-stack ceilings cannot be disabled/raised.
+pub fn parse_with_limits(source: &str, limits: ParseLimits) -> Result<Program, ParseError> {
+    limits.validate().map_err(|message| ParseError {
+        message,
+        span: Span {
+            start: 0,
+            end: 0,
+            line: 1,
+            column: 1,
+        },
+        limit: None,
+    })?;
     let tokens = tokenize(source)?;
-    Parser::new(tokens).parse_program()
+    Parser::new(tokens, limits).parse_program()
 }
 
 struct Parser {
@@ -53,15 +74,19 @@ struct Parser {
     current: usize,
     function_depth: usize,
     loop_depth: usize,
+    nesting: usize,
+    limits: ParseLimits,
 }
 
 impl Parser {
-    fn new(tokens: Vec<Token>) -> Self {
+    fn new(tokens: Vec<Token>, limits: ParseLimits) -> Self {
         Self {
             tokens,
             current: 0,
             function_depth: 0,
             loop_depth: 0,
+            nesting: 0,
+            limits,
         }
     }
 
@@ -80,12 +105,17 @@ impl Parser {
 
     fn parse_statement(&mut self) -> Result<Stmt, ParseError> {
         let mut span = self.peek().span;
-        let statement = self.parse_statement_kind()?;
+        self.enter()?;
+        let result = self.parse_statement_kind();
+        self.nesting -= 1;
+        let statement = result?;
         span.end = self.tokens[self.current - 1].span.end;
-        Ok(Stmt::Located {
+        let statement = Stmt::Located {
             span,
             statement: Box::new(statement),
-        })
+        };
+        self.check_depth(Node::Statement(&statement), span)?;
+        Ok(statement)
     }
 
     fn parse_statement_kind(&mut self) -> Result<Stmt, ParseError> {
@@ -401,9 +431,20 @@ impl Parser {
     // Pratt parser: binding powers encode operator precedence
     // and associativity.
     fn parse_expression(&mut self, min_binding_power: u8) -> Result<Expr, ParseError> {
+        self.enter()?;
+        let result = self.parse_expression_inner(min_binding_power);
+        self.nesting -= 1;
+        result
+    }
+
+    fn parse_expression_inner(&mut self, min_binding_power: u8) -> Result<Expr, ParseError> {
+        let span = self.peek().span;
         let mut left = self.parse_prefix()?;
 
         loop {
+            // Check every new node, not just the finished expression: rejected
+            // partial trees must also remain shallow enough to destroy safely.
+            self.check_depth(Node::Expression(&left), span)?;
             // Function calls and property/index access bind tightly.
             if 14 < min_binding_power {
                 break;
@@ -539,6 +580,7 @@ impl Parser {
             _ => Err(ParseError {
                 message: format!("expected expression, found {:?}", token.kind),
                 span: token.span,
+                limit: None,
             }),
         }
     }
@@ -692,6 +734,7 @@ impl Parser {
         ParseError {
             message: message.into(),
             span: self.peek().span,
+            limit: None,
         }
     }
 
@@ -699,7 +742,28 @@ impl Parser {
         ParseError {
             message: message.into(),
             span: self.tokens[self.current - 1].span,
+            limit: None,
         }
+    }
+
+    fn enter(&mut self) -> Result<(), ParseError> {
+        if self.nesting >= self.limits.max_nesting {
+            return Err(ParseError {
+                message: LimitKind::ParseNesting.message(self.limits.max_nesting),
+                span: self.peek().span,
+                limit: Some(LimitKind::ParseNesting),
+            });
+        }
+        self.nesting += 1;
+        Ok(())
+    }
+
+    fn check_depth(&self, node: Node<'_>, span: Span) -> Result<(), ParseError> {
+        check_depth(node, self.limits.max_ast_depth).map_err(|located| ParseError {
+            message: LimitKind::AstDepth.message(self.limits.max_ast_depth),
+            span: located.unwrap_or(span),
+            limit: Some(LimitKind::AstDepth),
+        })
     }
 }
 

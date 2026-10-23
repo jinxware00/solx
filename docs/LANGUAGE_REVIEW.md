@@ -4,7 +4,8 @@ Solx is not feature-complete. The current implementation supports lexical
 variables, binding constants and runtime variable annotations, functions and
 closures, numeric/while loops, separate lists and objects, explicit cached
 modules, and a small standard library. Structured runtime error recovery and
-automatic cycle collection are now implemented. These changes do not establish
+automatic cycle collection are now implemented, along with
+[execution limits and cancellation](EXECUTION_LIMITS.md). These changes do not establish
 performance or reliability superiority over Lua or Luau.
 
 ## Official Lua source reviewed
@@ -87,7 +88,7 @@ grapheme clusters, and nil-as-binding-deletion remains a surprising rule.
 | Priority | Improvement | Why and acceptance criteria |
 | --- | --- | --- |
 | 1 | Profile and harden memory management | Cycle collection is implemented with the existing Rc API, including host roots, closures, and module exports. Measure larger heaps and pause distributions; add allocation budgets and evaluate future heap representations. See [MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md). |
-| 2 | Bound execution and move toward an explicit VM stack | Add coherent parser nesting/AST-height, call/import, instruction, and allocation policies. A recursion counter alone leaves other stack-overflow paths. Test cancellation and recovery; then benchmark a bytecode VM and tail calls against equivalent Lua programs. |
+| 2 | Move toward an explicit VM stack and resource budgets | Parser nesting/AST depth, combined evaluation depth, call/import limits, evaluation steps, and cancellation/recovery are implemented. Add allocation/native-operation budgets and address recursive value destruction; then build and benchmark an explicit stack/bytecode VM and tail calls. See [EXECUTION_LIMITS.md](EXECUTION_LIMITS.md). |
 | 3 | Settle Number and nil semantics | Numbers currently use f64, so large integers lose precision. Evaluate exact integers within the single Number model, checked overflow, division-by-zero, and nonfinite results. Specify optional values separately from deletion before adding destructuring/multiple returns. These are compatibility decisions, not silent fixes. |
 | 4 | Better errors and editor checking | Add non-executing machine-readable lexer/parser diagnostics, expression ranges, error categories/causes, and structured rethrow. Follow with optional static checking of names and function signatures. Existing variable annotations only check at runtime. |
 | 5 | Practical iteration and library APIs | Specify list/object iteration, deterministic object ordering, mutation during iteration, and fresh closure bindings. Then consider map/filter and custom sorting, with explicit callback failure/mutation rules. |

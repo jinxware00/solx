@@ -341,9 +341,9 @@ Holding a host Value after its Interpreter is destroyed is supported; after
 dropping the last host root, collect explicitly or use the next interpreter
 checkpoint. Normal Solx allocations are registered automatically.
 
-This is cycle collection, not a moving heap, a sandbox, an instruction/memory
-budget, or a guarantee of bounded pauses. Parsing, evaluation, AST drop, and
-ordinary acyclic value destruction can still exhaust the Rust stack. See
+This is cycle collection, not a moving heap, a sandbox, a memory budget, or a
+guarantee of bounded pauses. Execution and syntax limits are specified in
+section 12.4. Ordinary deep acyclic value destruction remains recursive. See
 [MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md) for the ownership contract,
 algorithm, measurements, and remaining work.
 
@@ -403,11 +403,11 @@ collects unreachable function/environment, collection, and exported-closure
 cycles at the checkpoints in section 9.5. Live closures continue to retain
 their captured bindings. The earlier leak probes in `RUNTIME_AUDIT.md` now
 have collection regression coverage.
-Recursion uses the Rust call stack; tail-call optimisation and a general
-execution/depth limit are not implemented.
-Deep syntax, expression evaluation, AST cloning/destruction, and long
-acyclic import chains can also exhaust the stack. Collection traversal
-safety does not protect these other operations.
+Recursion uses the Rust call stack; tail-call optimisation is not implemented.
+Call and combined evaluation depth are now limited (section 12.4). Parser
+nesting and AST depth checks cover source-produced syntax and function-body
+cloning/destruction. These guards are not a guarantee for arbitrarily small
+host stacks or manually constructed host graphs.
 
 ### 10.4 Multiple return values
 
@@ -486,9 +486,8 @@ does not advance the counter`. An increment that overflows past finite
 bounds ends the loop; nonfinite header values are rejected.
 
 `while` evaluates its condition before each iteration, outside the fresh
-body scope, using normal Solx truthiness. Neither loop kind adds a
-general execution limit; a `while` condition must eventually become
-false or the body must exit explicitly.
+body scope, using normal Solx truthiness. Both loop kinds consume the shared
+execution budget, even when their bodies are empty (section 12.4).
 
 `break` exits the nearest enclosing loop. `continue` skips the rest of
 that iteration, advancing a numeric counter or reevaluating a `while`
@@ -562,8 +561,8 @@ exposed, and modifying one error snapshot does not change another error.
 raises a new error at that statement; structured rethrow and cause chains
 are not implemented. There is no `finally`/`defer` syntax yet. Catching
 Rust panics, stack exhaustion, allocation failure, or process termination
-is outside this mechanism. Cycle collection is separate (section 9.5);
-execution budgets remain work described in `RUNTIME_AUDIT.md`.
+is outside this mechanism. Execution-limit failures and cooperative cancellation
+also bypass handlers (section 12.4). Cycle collection is separate (section 9.5).
 
 Run `cargo run -- examples/error_handling.solx` for a working example.
 
@@ -601,6 +600,47 @@ source metadata have no precise position. `RuntimeError.message` contains
 only the original message; `location` and `contexts` hold structured
 metadata, and Display renders all three. Source excerpts, individual
 expression spans, unique REPL-buffer names, and suggestions are deferred.
+
+### 12.4 Execution limits and cancellation (implemented)
+
+Each public interpreter run starts a fresh evaluation budget of 10,000,000
+steps by default. Each executed statement, evaluated expression, and entered
+loop iteration costs one step; metadata wrappers and short-circuited operands
+do not. Functions, imports, and catch handlers share the caller's budget.
+A zero budget allows only empty programs. CLI `--max-steps N` and the Rust
+`ExecutionLimits` API configure it; `--unlimited-steps` or host `None` disables
+only the step budget.
+
+Defaults and current ceilings are 64 combined parser entries, 128 AST nodes
+along any path (including location wrappers), 64 combined active statement/
+expression evaluations, 32 user-function calls, and 16 uncached imports.
+Entry files and cache hits do not add import depth. All depth settings may be
+lowered but not raised above these ceilings or disabled. Combined evaluation
+depth can be exhausted before an individual call/import depth limit.
+
+Parser nesting is checked before descent, and AST depth while constructing
+expressions/statements, including iterative postfix and left-associated chains.
+Host-supplied Programs are validated before execution or function cloning.
+The host remains responsible for safely dropping rejected manual ASTs.
+
+Limit failures and cancellation stop the current public run, bypassing all
+Solx handlers, with source/call/import context where available. Ordinary
+language errors retain their catch behavior. Host errors distinguish these
+cases through `RuntimeError.kind` and `ParseError.limit`. On interruption,
+scopes and active counters/loading contexts are restored; completed effects
+and successful module caches remain. Incomplete modules can be retried.
+
+The CLI maps Ctrl+C to a cooperative cancellation token. The REPL clears the
+request after the interrupted buffer and accepts another command; embedders
+must explicitly reset their token after the run/controller have ended. The
+token is thread-safe, while the interpreter remains single-threaded.
+
+Checks occur at evaluation/loop boundaries, before imports, and around parsing.
+They do not preempt native calls, parsing, I/O, output, or GC already underway.
+These are implementation limits, not a sandbox, byte/memory/time limit, or a
+proof for every host stack. Deep runtime value destruction remains recursive.
+See [EXECUTION_LIMITS.md](EXECUTION_LIMITS.md) for APIs, CLI options, counting,
+tested behavior, and remaining work toward an explicit execution stack.
 
 ## 13. Imports and modules
 

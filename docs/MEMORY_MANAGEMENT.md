@@ -159,7 +159,9 @@ does not impose an allocation cap or recover from out-of-memory failures.
 Ordinary deep acyclic destruction, parsing, expression evaluation, function
 calls, imports, and AST clone/drop still use recursive paths. Safely collecting
 a large cycle does not establish that arbitrary deep programs are stack-safe.
-Execution/AST budgets and an explicit VM stack are the next major work. Broader
+Execution/AST guards and cooperative cancellation are now implemented in
+[EXECUTION_LIMITS.md](EXECUTION_LIMITS.md). They do not bound value-graph depth,
+allocation size, or GC work. An explicit VM stack remains major work. Broader
 memory/latency profiling should guide collector tuning and any heap redesign.
 
 Files changed in this milestone: `src/runtime/gc.rs` (new),
