@@ -381,7 +381,38 @@ impl Parser {
 
     fn parse_for(&mut self) -> Result<Stmt, ParseError> {
         let name = self.consume_identifier("expected a loop variable after 'for'")?;
-        self.consume(&TokenKind::Assign, "expected '=' after for loop variable")?;
+        if !self.matches(&TokenKind::Assign) {
+            let second_name = if self.matches(&TokenKind::Comma) {
+                let second =
+                    self.consume_identifier("expected a second loop variable after ','")?;
+                if second == name {
+                    return Err(self.error_at_previous(format!("duplicate loop variable '{name}'")));
+                }
+                if self.check(&TokenKind::Comma) {
+                    return Err(self.error("collection for supports at most two loop variables"));
+                }
+                Some(second)
+            } else {
+                None
+            };
+            self.consume(
+                &TokenKind::In,
+                if second_name.is_some() {
+                    "expected 'in' after collection loop variables"
+                } else {
+                    "expected '=' or 'in' after for loop variable"
+                },
+            )?;
+            let iterable = self.parse_expression(0)?;
+            self.consume(&TokenKind::Do, "expected 'do' after for loop collection")?;
+            let body = self.parse_loop_body("expected 'end' to close for loop")?;
+            return Ok(Stmt::CollectionFor {
+                name,
+                second_name,
+                iterable,
+                body,
+            });
+        }
         let start = self.parse_expression(0)?;
         self.consume(&TokenKind::Comma, "expected ',' after for loop start")?;
         let limit = self.parse_expression(0)?;

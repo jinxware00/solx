@@ -1,17 +1,21 @@
-# Checking syntax without execution
+# Checking syntax and names without execution
 
 ```sh
 solx check program.solx
 solx check --json program.solx
 solx check --json --stdin
+solx check --names --json program.solx
+solx check --symbols --json program.solx
 ```
 
-The last form reads UTF-8 source until stdin closes. The checker calls the same
+The `--stdin` form reads UTF-8 source until stdin closes. The checker calls the same
 lexer and parser used for execution, with the existing syntax-depth limits.
 It never creates an interpreter, executes statements/calls, resolves imports,
 or loads imported files. An infinite loop is valid syntax and completes its
-check immediately. Undefined names, missing modules, type mismatches, and
-runtime failures are outside this check.
+check immediately. The default mode checks syntax only. Optional `--names`
+adds conservative AST name analysis, and `--symbols --json` independently
+returns declaration symbols. Missing modules, type mismatches, imported members
+and runtime failures are outside all these checks.
 
 Exactly one file or `--stdin` is required. Files and stdin are limited to
 1,048,576 UTF-8 bytes (1 MiB). Invalid UTF-8, oversized input, and read failures
@@ -19,7 +23,7 @@ are operational failures. Use `--` before file paths starting with a dash.
 The new `check` subcommand reserves that bare CLI word; a file literally named
 `check` can still be executed as `solx ./check`.
 
-Exit status is 0 for valid syntax, 1 for a lexer/parser/depth-limit diagnostic,
+Exit status is 0 for a clean result, 1 for a source diagnostic (including optional names),
 and 2 for input or command-line usage errors. Text mode prints a success line
 or an error with the lexer/parser's existing 1-based line/column convention.
 Correctly invoked JSON mode writes one JSON object and a newline to stdout,
@@ -54,11 +58,27 @@ the buffer's end. Lexer errors cover the offending token, including consumed
 parts of an unfinished string/escape. Parser errors use their offending token;
 AST-depth errors may cover the containing statement.
 
-`diagnostics` currently has zero or one item. Its code is `lex-error`,
+Default syntax checking has zero or one diagnostic. Its code is `lex-error`,
 `parse-error`, or `syntax-limit`; its severity is `error`. As in normal parsing,
 the lexer scans the entire buffer first: a later lexical error takes precedence
 over an earlier token sequence that would fail parsing. Error prose is useful
 to humans but is not a machine-stable error identifier.
+
+`--names` adds at most 100 `undefined-name` diagnostics after a successful parse.
+Their ranges select exact identifier tokens. Block declarations and file globals
+are predeclared conservatively, permitting later closure captures while missing
+some use-before-definition or conditional-initialization errors. Function,
+branch, loop and handler scopes are respected; properties, object keys,
+annotations and string/comment contents are not variable uses. An isolated
+buffer may be a module, so `exports` is assumed available.
+
+`--symbols` requires JSON and adds a flat `symbols` array. Each entry has `name`,
+`kind` (`function`, `variable`, `constant`, or `module`), full statement `range`,
+and `selectionRange`. All ranges use the same UTF-8 byte offsets. Name/alias
+selection uses the exact identifier token; an implicit import selects its string
+specifier token because there is no declaration identifier. Syntax or input
+failures produce `symbols: []` when requested. Without the flag the field is
+absent. See [ANALYSIS.md](ANALYSIS.md) for exact scope and symbol rules.
 
 Valid input has `ok: true`, `diagnostics: []`, and `error: null`. Operational
 input failures have `ok: false`, `diagnostics: []`, and
@@ -72,13 +92,19 @@ input-size cap belongs to its reader; hosts choosing the library API own their
 input-size policy. `LexError` now retains a `span`, and conversion to ParseError
 preserves it. Hosts constructing LexError with struct literals must include the
 new field; its existing constructor remains available.
+Hosts can opt in through `solx::analysis::analyze_source` and serialize the
+result with `solx::check::json_analysis_report`; existing syntax-only APIs retain
+their behavior.
 
 ## VS Code integration
 
-Solx Language Support 0.3.1 checks the current buffer, including unsaved and
-untitled documents. Windows uses `check --json -- <snapshot>` with an owned
+The extension checks the current buffer, including unsaved and untitled
+documents. Since version 0.3.1, Windows uses `check --json -- <snapshot>` with an owned
 temporary file; other platforms use `check --json --stdin`. The configured
-executable must support schema v1. Cargo mode rebuilds the configured checkout
+executable must support schema v1. Version 0.4.0 source additionally supports
+`solx.diagnostics.checkNames` (default false) and Outline symbols through
+`solx.symbols.enabled`. Those features require the newer CLI flags; syntax-only
+checking remains the default. Cargo mode rebuilds the configured checkout
 before checks; no `target` binary is selected directly. An older installed
 interpreter is reported as unavailable for checking, without an execution
 fallback. No language parser is duplicated in JavaScript.
@@ -93,12 +119,14 @@ clears diagnostics and cancels owned work. Interpreter/protocol/timeout failures
 appear in the status bar and output channel, not as invented syntax errors.
 
 Use **Solx: Check Current File** for an immediate check. Settings and limitations
-are in [the extension README](../vscode-solx/README.md). These checks are syntax
-diagnostics, not a type checker, language server, debugger, or sandbox.
+are in [the extension README](../vscode-solx/README.md). Name checks are optional
+and conservative; neither mode is a type checker or execution sandbox. Outline
+symbols are declaration data, without rename/navigation or a debugger protocol.
 
-The source changes and current VSIX are separate from earlier installer ZIPs and
-installed binaries. Rebuild the interpreter to use this CLI. This milestone
-does not publish to the Marketplace or rebuild the installer bundle.
+Matching validation of the current runtime, extension 0.4.0 VSIX and installer
+is pending. Earlier package reports apply to their recorded source versions;
+they do not validate new flags or providers. Rebuild the interpreter to use this
+CLI. No Marketplace publication or normal-profile installation is implied.
 
 ### Windows buffer transport
 

@@ -73,7 +73,12 @@ fn malformed_loop_headers_and_bodies_report_positions() {
             1,
             5,
         ),
-        ("for i", "expected '=' after for loop variable", 1, 6),
+        (
+            "for i",
+            "expected '=' or 'in' after for loop variable",
+            1,
+            6,
+        ),
         ("for i =", "expected expression, found Eof", 1, 8),
         ("for i = 1", "expected ',' after for loop start", 1, 10),
         ("for i = 1,", "expected expression, found Eof", 1, 11),

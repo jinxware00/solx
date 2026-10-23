@@ -11,6 +11,18 @@ pub(super) const LIST_FUNCTIONS: &[LibraryFunction] = &[
     LibraryFunction::fixed("list.remove", 2, remove_item),
     LibraryFunction::fixed("list.find", 2, find),
     LibraryFunction::fixed("list.sort", 1, sort),
+    LibraryFunction::with_interpreter("list.map", 2, |interpreter, args| {
+        interpreter.map_list(args.list(0)?, args.function(1)?)
+    }),
+    LibraryFunction::with_interpreter("list.filter", 2, |interpreter, args| {
+        interpreter.filter_list(args.list(0)?, args.function(1)?)
+    }),
+    LibraryFunction::with_interpreter("list.fold", 3, |interpreter, args| {
+        interpreter.fold_list(args.list(0)?, &args.values[1], args.function(2)?)
+    }),
+    LibraryFunction::with_interpreter("list.sorted", 2, |interpreter, args| {
+        interpreter.sorted_list(args.list(0)?, args.function(1)?)
+    }),
 ];
 
 pub(super) const OBJECT_FUNCTIONS: &[LibraryFunction] = &[

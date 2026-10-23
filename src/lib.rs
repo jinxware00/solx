@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod check;
 pub mod interpreter;
 pub mod lexer;

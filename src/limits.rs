@@ -4,6 +4,9 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::Duration;
+
+use crate::runtime::RuntimeError;
 
 /// Conservative ceilings while parsing/evaluation still use the Rust stack.
 pub const MAX_PARSE_NESTING: usize = 64;
@@ -12,6 +15,7 @@ pub const MAX_EVALUATION_DEPTH: usize = 64;
 pub const MAX_CALL_DEPTH: usize = 32;
 pub const MAX_IMPORT_DEPTH: usize = 16;
 pub const DEFAULT_MAX_STEPS: u64 = 10_000_000;
+pub const DEFAULT_MAX_SOURCE_BYTES: usize = 1_048_576;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LimitKind {
@@ -21,6 +25,8 @@ pub enum LimitKind {
     CallDepth,
     ImportDepth,
     Steps,
+    Deadline,
+    SourceBytes,
 }
 
 impl LimitKind {
@@ -32,6 +38,8 @@ impl LimitKind {
             Self::CallDepth => "function call depth",
             Self::ImportDepth => "import depth",
             Self::Steps => "execution step",
+            Self::Deadline => "execution deadline",
+            Self::SourceBytes => "source byte",
         };
         format!("{name} limit exceeded ({limit})")
     }
@@ -71,6 +79,12 @@ pub struct ExecutionLimits {
     pub max_import_depth: usize,
     /// Per public run, shared with imports/calls. None disables only this budget.
     pub max_steps: Option<u64>,
+    /// Elapsed monotonic time per public run, shared with imports/calls.
+    /// None avoids clock reads at checkpoints. Native operations are not preempted.
+    pub max_duration: Option<Duration>,
+    /// UTF-8 bytes per entry, imported file, or source buffer; zero permits empty input.
+    /// Hosts may raise this limit. It does not bound AST or runtime heap allocation.
+    pub max_source_bytes: usize,
 }
 
 impl Default for ExecutionLimits {
@@ -81,11 +95,24 @@ impl Default for ExecutionLimits {
             max_call_depth: MAX_CALL_DEPTH,
             max_import_depth: MAX_IMPORT_DEPTH,
             max_steps: Some(DEFAULT_MAX_STEPS),
+            max_duration: None,
+            max_source_bytes: DEFAULT_MAX_SOURCE_BYTES,
         }
     }
 }
 
 impl ExecutionLimits {
+    pub(crate) fn check_source_size(self, bytes: usize) -> Result<(), RuntimeError> {
+        if bytes > self.max_source_bytes {
+            Err(RuntimeError::limit(
+                LimitKind::SourceBytes,
+                self.max_source_bytes,
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     pub(crate) fn validate(self) -> Result<(), String> {
         self.parse.validate()?;
         check(

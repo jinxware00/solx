@@ -59,6 +59,12 @@ pub enum Stmt {
         step: Option<Expr>,
         body: Vec<Stmt>,
     },
+    CollectionFor {
+        name: String,
+        second_name: Option<String>,
+        iterable: Expr,
+        body: Vec<Stmt>,
+    },
     If {
         branches: Vec<(Expr, Vec<Stmt>)>,
         else_branch: Option<Vec<Stmt>>,

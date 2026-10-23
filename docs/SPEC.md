@@ -218,27 +218,50 @@ Solx uses Lua's operator set and precedence rules.
 -   `str()` converts supported values to strings.
 -   `print()` remains available.
 
-Detailed conversion rules, equality semantics across different types,
-numeric edge cases, and the precise meaning of `#` for every supported
-collection type remain to be specified.
+Numeric conversion, arithmetic, and comparison follow [NUMBERS.md](NUMBERS.md).
+`#text` counts Unicode scalar values; `#list` counts stored entries, including
+nil; `#object` counts keys. Other operand types produce an error. Collection
+equality follows section 9.4.
 
 ## 8. Strings and interpolation
 
-Concatenation is implemented. String interpolation is planned; the current
-interpreter treats braces inside strings as literal text. The interpolation
-example below illustrates the intended future syntax.
+### 8.1 Ordinary strings and concatenation (implemented)
+
+Single- and double-quoted strings support the existing escape sequences and
+reject unescaped newlines. `..` concatenates strings and supported converted
+values. Braces inside all current string forms are literal text.
 
 ``` lua
 var name = "Jinx"
 var score = 100
 
 print("Player: " .. name)
-print("Player: {name}, Score: {score}")
+print("Player: {name}, Score: {score}") -- prints these braces literally
 ```
 
-Expressions inside interpolation braces are evaluated and their values
-inserted into the string. Exact escaping rules for literal braces,
-quotes, nested expressions, and multiline strings remain unresolved.
+### 8.2 Raw multiline strings (implemented)
+
+Three double quotes open and close a raw String literal:
+
+```lua
+var message = """First line
+Second line: {braces stay literal}
+Path: C:\Users\name\file.txt"""
+```
+
+Raw literals preserve Unicode, backslashes, indentation, and LF/CRLF line
+endings. They perform no escapes, interpolation, trimming, or indentation
+removal. The first following three double quotes close the literal, including
+after a backslash; six quotes produce an empty String. Existing String
+operations apply. An unterminated raw literal spans its opening delimiter
+through EOF, and the REPL accepts continuation lines. See
+[RAW_STRINGS.md](RAW_STRINGS.md) for delimiter and compatibility examples.
+
+### 8.3 Interpolation (planned)
+
+Interpolation is not implemented. Its proposed behavior would evaluate
+expressions in braces and insert their values. Escaping literal braces, nested
+expressions, and interactions with quoted/raw string forms remain undecided.
 
 ## 9. Lists and objects
 
@@ -280,16 +303,19 @@ print(player[property])
 Accessing a missing object property produces a warning and returns
 `nil`.
 
-### 9.3 Collection questions still open
+### 9.3 Indexing and mutation (implemented)
 
--   Whether negative, zero, non-integer, or non-number list indexes are
-    errors or missing-index warnings.
--   Whether list/object assignment can create new entries or replace
-    existing ones in every case.
--   Future optional-value and deep-immutability APIs. Nil assignment currently
-    retains both variable bindings and collection entries.
--   Collection mutation methods and standard operations.
--   Equality and length semantics for lists and objects.
+List reads require an integer Number index in the valid 1-based range.
+Invalid index values and out-of-range reads warn and return nil. List
+assignment instead requires a valid existing index and errors otherwise;
+`list.append` creates a new final entry. Object bracket access requires a
+String key. Object assignment creates or replaces that key; missing reads
+warn and return nil. Nil assignments preserve entries.
+
+Constants protect bindings while their collection contents remain mutable.
+Length rules are in section 7, structural equality in section 9.4, collection
+iteration in section 11, and standard operations in section 14. Deep
+immutability and broader optional-value APIs remain open.
 
 ### 9.4 Cyclic collections (implemented)
 
@@ -450,7 +476,7 @@ evaluation remains to be defined; nil itself has ordinary value semantics.
 
 ## 11. Loops
 
-Lua-style numeric `for` loops and `while` loops are supported. `break`
+Numeric `for`, collection `for ... in`, and `while` loops are supported. `break`
 and `continue` are supported.
 
 ``` lua
@@ -491,17 +517,28 @@ does not advance the counter`. An increment that overflows past finite
 bounds ends the loop; nonfinite header values are rejected.
 
 `while` evaluates its condition before each iteration, outside the fresh
-body scope, using normal Solx truthiness. Both loop kinds consume the shared
+body scope, using normal Solx truthiness. All loop forms consume the shared
 execution budget, even when their bodies are empty (section 12.4).
 
 `break` exits the nearest enclosing loop. `continue` skips the rest of
-that iteration, advancing a numeric counter or reevaluating a `while`
-condition. Both work through nested `if` scopes and are rejected outside
+that iteration, advancing a numeric counter, selecting the next collection
+entry, or reevaluating a `while` condition. Both work through nested `if`
+scopes and are rejected outside
 a loop in the same function. A function declared inside a loop cannot
 break or continue its caller's loop. `return` exits the current function
 through any nested loops. Normal completion, all three control-flow
 statements, and runtime errors restore enclosing scopes; completed
 mutations are retained.
+
+Collection loops support `for value in list`, `for index, value in list`,
+`for key in object`, and `for key, value in object`, each followed by `do ... end`.
+`in` is now reserved. The iterable is evaluated once before binding the names.
+Lists retain index order and nil entries; objects use sorted String keys.
+Iteration snapshots the top-level entries before executing the body, so later
+membership changes do not alter visits. Nested values remain shared references.
+Each copied entry and each iteration consumes an execution step. Names receive
+fresh per-iteration bindings. Full mutation/closure/limit rules and migration
+guidance are in [ITERATION.md](ITERATION.md).
 
 ## 12. Error handling
 
@@ -642,18 +679,39 @@ token is thread-safe, while the interpreter remains single-threaded.
 
 Checks occur at evaluation/loop boundaries, before imports, and around parsing.
 They do not preempt native calls, parsing, I/O, output, or GC already underway.
-These are implementation limits, not a sandbox, byte/memory/time limit, or a
-proof for every host stack. Deep runtime value destruction remains recursive.
+These controls do not provide a total heap budget, a hard process timeout, a
+sandbox, or a proof for every host stack. Deep runtime value destruction remains recursive.
 See [EXECUTION_LIMITS.md](EXECUTION_LIMITS.md) for APIs, CLI options, counting,
 tested behavior, and remaining work toward an explicit execution stack.
 
-### 12.5 Non-executing syntax checking (implemented)
+Runtime executions also support an optional monotonic deadline and a configurable
+source-byte budget (default 1 MiB per file/buffer). File and REPL input is read
+with bounds. `--timeout-ms` is disabled by default; `--max-source-bytes` adjusts
+runtime input size. Both budget failures bypass try/catch. Deadlines are
+cooperative and do not preempt native work or filesystem reads. See
+[RESOURCE_BUDGETS.md](RESOURCE_BUDGETS.md) for the exact scope and host API.
+
+### 12.5 Non-executing checking and declaration symbols (implemented)
 
 `solx check FILE` and `solx check --json --stdin` use the real lexer and parser
 without constructing an interpreter. They do not execute code or resolve/load
 imports. They report the first lexer/parser error or existing syntax-depth
-limit, with preserved half-open UTF-8 byte ranges. Syntax checking does not
-check names, types, module availability, or runtime behavior.
+limit, with preserved half-open UTF-8 byte ranges. Default checking does not
+analyze names, types, module availability, or runtime behavior.
+
+`--names` optionally reports at most 100 undefined-name uses from the actual
+AST, with exact identifier-token ranges. Block locals and all file globals
+are predeclared conservatively; functions, loop bindings, branches and catch
+scopes are respected. An isolated buffer may be a module, so `exports` is
+assumed available. This can miss use-before-definition and conditional
+initialization errors; it does not infer types or callable signatures.
+
+`--symbols --json` independently returns named function, variable/constant and
+import declarations. Full declaration ranges come from parser statement spans;
+selection ranges use identifier tokens, or the string-specifier token for an
+implicit import. Analysis never resolves imports or executes code. Syntax
+failures prevent partial analysis. See [ANALYSIS.md](ANALYSIS.md) for the scope
+rules and additive schema fields.
 
 The CLI limits input to 1 MiB of UTF-8 source. JSON schema version 1 distinguishes
 valid input (exit 0), source diagnostics (exit 1), and input failures (exit 2).
@@ -678,8 +736,7 @@ print(result)
 
 ### 13.2 File and module imports
 
-Both file-path imports and module-name imports are supported in the
-design:
+Both file-path imports and built-in module-name imports are implemented:
 
 ``` lua
 import "player.solx"
@@ -687,10 +744,8 @@ import "math"
 ```
 
 -   File-path imports resolve `.solx` files.
--   Module-name imports resolve built-in libraries or modules in defined
-    search locations.
--   Imported modules should be cached so they are not needlessly
-    initialised repeatedly.
+-   Bare module-name imports resolve registered built-in libraries.
+-   Successfully imported modules are cached for that interpreter.
 -   Each file has its own global namespace.
 -   Values are shared across files through an explicit module interface,
     not by merging globals.
@@ -826,11 +881,18 @@ left to right, before validation, following ordinary calls.
 | `string` | `split(text, separator)` | Literal nonempty separator; preserves empty fields, including trailing ones. Splitting empty text returns `[""]`. |
 | `string` | `join(items, separator)` | List of Strings and String separator; no coercion. Empty list returns empty String. |
 | `string` | `starts_with(text, prefix)`, `ends_with(text, suffix)` | Case-sensitive; empty prefix/suffix matches. |
+| `string` | `replace(text, needle, replacement)` | Replace nonoverlapping literal matches; nonempty needle, at most 1 MiB UTF-8 output. |
+| `string` | `byte_len(text)` | Exact UTF-8 byte length, distinct from scalar-counting len. |
+| `string` | `codepoints(text)`, `from_codepoints(items)` | Convert Unicode scalars to/from exact Number lists. Reject invalid scalars/surrogates; see [STRINGS.md](STRINGS.md) for limits. |
 | `list` | `len(items)` | Number of entries, matching `#items`. |
 | `list` | `append(items, value)` | Mutates the shared list, including nil entries; returns nil. |
 | `list` | `remove(items, index)` | Removes and returns the entry, shifts later entries left. Index is a finite integer in `1..len`; invalid or empty-list removal errors. |
 | `list` | `find(items, value)` | First 1-based matching index using existing value equality; nil if absent. |
-| `list` | `sort(items)` | Stable, ascending, in-place sort of uniformly finite Numbers or uniformly Strings. Empty lists accepted. Mixed types, nonfinite numbers, and other types error before mutation. Returns nil; custom comparators deferred. |
+| `list` | `sort(items)` | Stable, ascending, in-place sort of uniformly finite Numbers or uniformly Strings. Empty lists accepted. Mixed types, nonfinite numbers, and other types error before mutation. Returns nil; takes no comparator. |
+| `list` | `map(items, callback)` | New List of one callback result per snapshot value, including nil. Callback receives the value. |
+| `list` | `filter(items, predicate)` | New List of snapshot values whose predicate result is truthy. Predicate receives the value. |
+| `list` | `fold(items, initial, callback)` | Visit left to right, passing accumulator then value; return the final accumulator, or initial for an empty List. |
+| `list` | `sorted(items, comparator)` | New stably sorted List. Comparator receives left/right values and returns a finite Number: negative, zero, or positive. |
 | `object` | `keys(object)` | A new List of keys sorted lexicographically for deterministic output. |
 | `object` | `has(object, key)` | Boolean; key must be String. A property holding nil still exists. |
 | `object` | `remove(object, key)` | Removes and returns the property, or nil when absent, without warning. |
@@ -842,6 +904,16 @@ nil preserves variable bindings and collection entries. Collection entries
 remain until explicitly removed. Arithmetic and numeric comparison follow
 section 6.2; cyclic formatting and structural equality
 follow section 9.4.
+
+Callback list operations first snapshot membership and release their own source
+borrow. Nested reference values remain shared; callback side effects persist,
+including on failure. They do not mutate source membership themselves and return
+no partial result on error. Snapshots, visits, merge movements and callbacks
+share the current run's steps, deadline, cancellation and call/evaluation limits.
+Ordinary callback errors are catchable; budget failures and cancellation are
+not. Sorting uses a fallible iterative stable merge procedure; inconsistent
+comparators need not produce a globally ordered result. Detailed callback,
+empty-input and mutation rules are in [COLLECTION_APIS.md](COLLECTION_APIS.md).
 
 Random generation is deferred until seeding, reproducibility, generator
 state isolation, and cryptographic/noncryptographic API boundaries are
@@ -912,11 +984,11 @@ Compact value representation is a design requirement from the beginning,
 but its exact bit layout and storage strategy are implementation
 decisions subject to measurement.
 
-## 18. Confirmed decisions checklist
+## 18. Implementation status
 
-These are design decisions, not a completed-feature checklist. In particular,
-multiple returns, `pcall`, and the bytecode VM remain
-unimplemented. See [the language review](LANGUAGE_REVIEW.md) for current gaps.
+Checked items below are implemented in the current source. Unchecked items are
+planned or require further design; none implies a published package. See
+[the roadmap](ROADMAP.md) for release and validation work.
 
 -   [x] Language name: Solx.
 -   [x] File extension: `.solx`.
@@ -939,57 +1011,65 @@ unimplemented. See [the language review](LANGUAGE_REVIEW.md) for current gaps.
 -   [x] Nil is storable in bindings and collection entries.
 -   [x] Named and anonymous `fn` functions; no arrow functions
     initially.
--   [x] Closures and multiple return values.
+-   [x] Lexical closures and single return values.
+-   [ ] Multiple return values and multiple-variable binding.
 -   [x] Implicit function return produces `nil`.
--   [x] Numeric `for`, `while`, `break`, and `continue`.
--   [x] `try`/`catch` and `pcall()`.
--   [x] Full diagnostics for uncaught runtime errors.
+-   [x] Numeric/collection `for`, `while`, `break`, and `continue`.
+-   [x] `try`/`catch` with structured error snapshots.
+-   [ ] `pcall()` result semantics and implementation.
+-   [x] Uncaught errors with messages, locations, and call/import contexts.
+-   [x] Raw multiline strings and bounded string utilities.
+-   [ ] String interpolation.
+-   [x] Callback list map/filter/fold and stable custom sorting.
+-   [x] Bounded JSON parsing and serialization.
+-   [x] Cooperative cancellation, depth/step limits, optional deadlines and source limits.
+-   [x] Non-executing syntax checks, optional name analysis and declaration symbols.
 -   [x] Explicit imports for bundled standard libraries.
 -   [x] Both file-path and module-name imports.
 -   [x] Procedural and functional programming; no classes initially.
 -   [x] Automatic garbage collection.
--   [x] Compact value representation from the start.
--   [x] Package manager deferred until the language and module system
-    stabilise.
+-   [ ] More compact heap/value representations, subject to measurement.
+-   [ ] Explicit VM stack, bytecode execution and tail calls.
+-   [ ] Project manifest/lockfile and package tooling from section 16.
 -   [x] Performance measured through benchmarks; no unsupported speedup
     claims.
 
 ## 19. Unresolved decisions
 
-These are intentionally not treated as settled: 1. Optional/union annotation
-syntax and future multiple-result behavior; nil storage itself is settled.
-2. Complete type system: supported type names, annotation grammar,
-function signatures, compatibility rules, and error timing. 3. String
-interpolation escaping and multiline-string syntax. 4. Equality rules
-across different types and for collections. 5. Numeric edge cases,
-conversions, division-by-zero behaviour, and length operator semantics.
-6. Broader collection operations beyond section 14. 7. Deep immutability
-(current constants protect bindings only). 8. Package resolution, hot
-reload, and untrusted-module capabilities beyond section 13.
-9. Exact `pcall()` result values. 10. Detailed runtime
-diagnostic format. 11. Collector tuning and future heap representation. 12.
-Standard-library inventory and APIs. 13. CLI command design, project
-layout, and build/release process. 14. Benchmark suite, baseline
-versions, and acceptance thresholds.
+The following remain open beyond the implemented rules above:
 
-## 20. Suggested implementation order
+- Optional/union types, function parameter/return annotations, multiple results,
+  multiple-variable binding and exact `pcall()` results.
+- Interpolation syntax/escaping and optional grapheme-oriented string APIs.
+  Raw multiline syntax and existing scalar/byte operations are settled.
+- Deep immutability and collection APIs beyond section 14.
+- Deterministic resource cleanup and explicitly granted file, environment,
+  process, network, clock and randomness capabilities.
+- Project manifests, local dependency resolution, lockfiles, verified package
+  caches, registry trust, hot reload and asynchronous module loading.
+- Expression-level runtime spans, structured rethrow/causes, multiple syntax
+  error recovery and broader static analysis. Current variable annotations are
+  runtime checks.
+- Allocation/native-operation/output budgets, iterative value destruction,
+  collector tuning, compact representations and an explicit VM stack.
+- Navigation/rename, signature help, formatting and debugger protocols.
+- Further benchmark workloads, memory/GC measurements and acceptance thresholds;
+  release signing and fresh-machine validation.
 
-1.  Create the Rust workspace and automated test setup.
-2.  Implement a lexer with tests for keywords, identifiers, numbers,
-    strings, operators, comments, and source positions.
-3.  Implement a parser and AST for literals, variables, arithmetic,
-    concatenation, conditions, and `print`.
-4.  Implement runtime values and scope resolution.
-5.  Add functions, closures, return values, and loops.
-6.  Add lists and objects, including the chosen warning behaviour.
-7.  Add diagnostics with source locations and stack traces.
-8.  Resolve `nil` and type-system edge cases before depending on them
-    throughout the runtime.
-9.  Add modules and explicit standard-library imports.
-10. Add `try`/`catch` and specify `pcall()` behaviour.
-11. Add the bytecode VM and benchmark against the interpreter.
-12. Profile, optimise, and publish reproducible performance and memory
-    results.
+## 20. Development sequence
+
+The lexer/parser, tree-walk runtime, scopes, functions, collections, modules,
+structured errors, nil/numeric foundations and the source tooling described
+above are implemented. Keep their regression checks and documented behavior
+stable while extending the language.
+
+Complete matching editor/package validation for each source milestone. Next,
+scope local project tooling and host capabilities independently, using section
+16's no-download/no-install-hook design. Continue measuring current runtime
+costs before choosing allocation policies or a VM representation. Multiple
+results, `pcall`, interpolation, resource cleanup and a bytecode VM require
+explicit designs and tests; they are not implied by existing function,
+iteration or callback syntax. Track current work in [ROADMAP.md](ROADMAP.md).
 
 ------------------------------------------------------------------------
 

@@ -2,11 +2,18 @@
 
 Solx is not feature-complete. The current implementation supports lexical
 variables, binding constants and runtime variable annotations, functions and
-closures, numeric/while loops, separate lists and objects, explicit cached
-modules, and a small standard library. Structured runtime error recovery and
-automatic cycle collection are now implemented, along with
-[execution limits and cancellation](EXECUTION_LIMITS.md). These changes do not establish
-performance or reliability superiority over Lua or Luau.
+closures, numeric/collection/while loops, separate lists and objects, explicit
+cached modules, and a standard library with bounded JSON, string utilities and
+callback collection operations. Structured runtime errors, automatic cycle
+collection, raw multiline strings, exact integers and storable nil are
+implemented. [Execution controls](RESOURCE_BUDGETS.md) include optional deadlines
+and source limits; [static analysis](ANALYSIS.md) adds optional name checks and
+declaration symbols. These changes do not establish performance or reliability
+superiority over Lua or Luau.
+
+The current source and its targeted checks are separate from release artifacts.
+Matching VSIX/installer validation is pending. Historical results below describe
+the original try/catch milestone, not validation of every current feature.
 
 ## Official Lua source reviewed
 
@@ -73,8 +80,8 @@ loop/return unwinding, failed-import retry, host borrow errors, CLI exit codes,
 and multiline REPL input. VS Code source support adds a snippet and keywords
 and preserves API shadowing inside handlers. No diagnostics server is added.
 
-This is an unreleased source change. Existing ZIP/VSIX packages and installed
-interpreters are unchanged. Build the current code with Cargo to use it.
+These are unreleased source milestones. Build the current code with Cargo to
+use them; an earlier ZIP/VSIX test receipt does not validate new source changes.
 
 ## What should make Solx better
 
@@ -89,22 +96,23 @@ arithmetic; see [NIL_MIGRATION.md](NIL_MIGRATION.md) and [NUMBERS.md](NUMBERS.md
 | Priority | Improvement | Why and acceptance criteria |
 | --- | --- | --- |
 | 1 | Profile and harden memory management | Cycle collection is implemented with the existing Rc API, including host roots, closures, and module exports. Measure larger heaps and pause distributions; add allocation budgets and evaluate future heap representations. See [MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md). |
-| 2 | Move toward an explicit VM stack and resource budgets | Parser nesting/AST depth, combined evaluation depth, call/import limits, evaluation steps, and cancellation/recovery are implemented. Add allocation/native-operation budgets and address recursive value destruction; then build and benchmark an explicit stack/bytecode VM and tail calls. See [EXECUTION_LIMITS.md](EXECUTION_LIMITS.md). |
+| 2 | Move toward an explicit VM stack and resource budgets | Depth/step limits, cancellation, optional monotonic deadlines and bounded source reads are implemented. Add allocation/native-operation/output budgets and address recursive value destruction; then build and benchmark an explicit stack/bytecode VM and tail calls. See [RESOURCE_BUDGETS.md](RESOURCE_BUDGETS.md). |
 | 3 | Extend the settled Number and nil foundations | Exact i64 integers, checked arithmetic, exact mixed comparisons, and storable nil are implemented. Optional/union annotations and multiple-result rules remain open; retain explicit migration notes for further compatibility changes. |
-| 4 | Better errors and editor checking | Non-executing JSON lexer/parser checks and live editor diagnostics are implemented; see [CHECKING.md](CHECKING.md). Next add expression ranges, error categories/causes, and structured rethrow, followed by optional static checking of names and function signatures. Existing variable annotations only check at runtime. |
-| 5 | Practical iteration and library APIs | Specify list/object iteration, deterministic object ordering, mutation during iteration, and fresh closure bindings. Then consider map/filter and custom sorting, with explicit callback failure/mutation rules. |
+| 4 | Better errors and editor checking | Syntax checks, optional conservative name analysis and declaration symbols are implemented; see [CHECKING.md](CHECKING.md). Next add expression ranges, error categories/causes, structured rethrow, stronger name/signature analysis and navigation. Existing variable annotations check at runtime. |
+| 5 | Build on practical iteration and library APIs | List/object snapshot iteration and map/filter/fold/custom sorting are implemented with explicit mutation, callback-failure and budget rules. Expand APIs only with concrete use cases; see [ITERATION.md](ITERATION.md) and [COLLECTION_APIS.md](COLLECTION_APIS.md). |
 | 6 | Resource handling and I/O | Design deterministic cleanup (`defer`/resource scopes) alongside explicit file/OS capabilities. Define cleanup failures and cancellation before adding filesystem/network/process APIs. Lua's closing mechanism is a useful reference; arbitrary ambient access is not required for Solx. |
-| 7 | Strings, results, and packages | Finish interpolation escaping and multiline text, add explicit grapheme operations if needed, and design multiple results without context-dependent surprises. Stabilize these foundations before implementing the already-proposed package manifest and lockfile. |
+| 7 | Strings, results, and packages | Raw multiline strings, literal replacement and scalar/byte conversions are implemented. Specify interpolation escaping and multiple results; add grapheme operations if needed. A bounded local manifest/entry validator can begin the proposed package tooling without downloads or execution hooks. |
 
 Coroutines/async, metaprogramming, classes, and a JIT require concrete use
 cases and measurements. They should not displace memory correctness, precise
 semantics, diagnostics, or a useful standard library. Nothing here claims to
 fix every issue in Lua or Luau.
 
-## Validation and change scope: try/catch milestone
+## Historical validation and change scope: try/catch milestone
 
-Baseline: 187 Rust tests and 34 extension tests passed before editing.
-After this change on Windows:
+These figures record the original try/catch change only. They are not current
+suite totals or final package validation. Baseline: 187 Rust tests and 34
+extension tests passed before that change. Observed afterward on Windows:
 
 | Command | Observed result |
 | --- | --- |

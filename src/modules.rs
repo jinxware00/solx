@@ -3,8 +3,10 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
+use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
+use crate::limits::LimitKind;
 use crate::runtime::{RuntimeError, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -88,10 +90,24 @@ impl ModuleLoader {
         })
     }
 
-    pub(crate) fn read(path: &Path) -> Result<String, RuntimeError> {
-        fs::read_to_string(path).map_err(|error| {
+    pub(crate) fn read(path: &Path, max_source_bytes: usize) -> Result<String, RuntimeError> {
+        let read_error = |error| {
             RuntimeError::new(format!("cannot read '{}': {error}", path.display()))
                 .at(Some(path), None)
+        };
+        let file = fs::File::open(path).map_err(read_error)?;
+        let bytes = read_source_bytes(file, max_source_bytes).map_err(read_error)?;
+        if bytes.len() > max_source_bytes {
+            return Err(
+                RuntimeError::limit(LimitKind::SourceBytes, max_source_bytes).at(Some(path), None),
+            );
+        }
+        String::from_utf8(bytes).map_err(|_| {
+            RuntimeError::new(format!(
+                "cannot read '{}': source must be valid UTF-8",
+                path.display()
+            ))
+            .at(Some(path), None)
         })
     }
 
@@ -126,5 +142,34 @@ impl ModuleLoader {
 
     pub(crate) fn cache(&mut self, id: ModuleId, value: Value) {
         self.cache.insert(id, value);
+    }
+}
+
+fn read_source_bytes(reader: impl Read, maximum: usize) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    // The extra byte distinguishes an exact fit from oversized input. Saturation
+    // also permits host-selected usize::MAX without arithmetic overflow.
+    let limit = u64::try_from(maximum).unwrap_or(u64::MAX).saturating_add(1);
+    reader.take(limit).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_reader_stops_at_one_byte_past_the_budget_even_without_eof() {
+        for maximum in [0, 1, 17, 1_048_576] {
+            let bytes = read_source_bytes(io::repeat(b'x'), maximum).unwrap();
+            assert_eq!(bytes.len(), maximum + 1);
+        }
+    }
+
+    #[test]
+    fn source_reader_preserves_exact_boundary_bytes_and_large_host_budgets() {
+        let source = "--\u{e9}".as_bytes();
+        assert_eq!(read_source_bytes(source, source.len()).unwrap(), source);
+        assert_eq!(read_source_bytes(source, usize::MAX).unwrap(), source);
     }
 }

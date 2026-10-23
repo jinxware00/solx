@@ -31,6 +31,7 @@ pub enum TokenKind {
     Global,
     If,
     Import,
+    In,
     Nil,
     Not,
     Or,

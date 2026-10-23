@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::ControlFlow;
 use std::path::Path;
 use std::rc::Rc;
@@ -27,7 +27,7 @@ pub struct Interpreter {
     environment: Environment,
     modules: ModuleLoader,
     current_location: Option<SourceLocation>,
-    control: Control,
+    pub(super) control: Control,
 }
 
 impl Default for Interpreter {
@@ -95,7 +95,7 @@ impl Interpreter {
     pub fn run_file(&mut self, path: impl AsRef<Path>) -> Result<(), RuntimeError> {
         self.control.begin_run()?;
         let path = self.modules.entry_path(path.as_ref())?;
-        let source = ModuleLoader::read(&path)?;
+        let source = ModuleLoader::read(&path, self.control.limits.max_source_bytes)?;
         let id = ModuleId::File(path.clone());
         self.modules.begin(&id)?;
         self.environment.source_file = Some(path.clone());
@@ -149,7 +149,7 @@ impl Interpreter {
     }
 
     fn execute_module(&mut self, path: &Path) -> Result<Value, RuntimeError> {
-        let source = ModuleLoader::read(path)?;
+        let source = ModuleLoader::read(path, self.control.limits.max_source_bytes)?;
         let mut environment = Self::fresh_environment();
         environment.source_file = Some(path.to_owned());
         let exports = Rc::new(std::cell::RefCell::new(HashMap::new()));
@@ -178,6 +178,10 @@ impl Interpreter {
 
     fn run_source_in(&mut self, source: &str, file: Option<&Path>) -> Result<(), RuntimeError> {
         self.control.check_cancelled()?;
+        self.control
+            .limits
+            .check_source_size(source.len())
+            .map_err(|error| error.at(file, None))?;
         let program = parse_with_limits(source, self.control.limits.parse).map_err(|error| {
             let kind = error
                 .limit
@@ -354,6 +358,15 @@ impl Interpreter {
                 return self.execute_for(name, start, limit, step.as_ref(), body);
             }
 
+            Stmt::CollectionFor {
+                name,
+                second_name,
+                iterable,
+                body,
+            } => {
+                return self.execute_collection_for(name, second_name.as_deref(), iterable, body);
+            }
+
             Stmt::Break => return Ok(ControlFlow::Break(Jump::Break)),
             Stmt::Continue => return Ok(ControlFlow::Break(Jump::Continue)),
 
@@ -465,6 +478,90 @@ impl Interpreter {
                 ));
             }
             counter = next;
+        }
+        Ok(ControlFlow::Continue(()))
+    }
+
+    fn execute_collection_for(
+        &mut self,
+        name: &str,
+        second_name: Option<&str>,
+        iterable: &Expr,
+        body: &[Stmt],
+    ) -> ExecutionResult {
+        // Host-created ASTs must obey the same distinct-binding rule as source.
+        if second_name == Some(name) {
+            return Err(RuntimeError::new(format!(
+                "duplicate loop variable '{name}'"
+            )));
+        }
+        // Evaluate once before introducing bindings. Snapshot references remain
+        // GC roots, and release the collection borrow before the body can mutate it.
+        match self.evaluate(iterable)? {
+            Value::List(items) => {
+                let mut snapshot = Vec::new();
+                for value in read_collection(&items, "collection iteration")?.iter() {
+                    self.control.step()?;
+                    snapshot.push(value.clone());
+                }
+                drop(items);
+                let entries = snapshot.into_iter().enumerate().map(|(index, value)| {
+                    if second_name.is_some() {
+                        (crate::runtime::numeric::count(index + 1), value)
+                    } else {
+                        (value, Value::Nil)
+                    }
+                });
+                self.execute_collection_entries(name, second_name, entries, body)
+            }
+            Value::Object(properties) => {
+                // Incremental ordered insertion checks interruption between entries,
+                // instead of performing an unchecked full sort after copying.
+                let mut snapshot = BTreeMap::new();
+                for (key, value) in read_collection(&properties, "collection iteration")?.iter() {
+                    self.control.step()?;
+                    snapshot.insert(key.clone(), value.clone());
+                }
+                drop(properties);
+                let entries = snapshot
+                    .into_iter()
+                    .map(|(key, value)| (Value::String(key), value));
+                self.execute_collection_entries(name, second_name, entries, body)
+            }
+            other => Err(RuntimeError::new(format!(
+                "collection for requires List or Object, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+
+    fn execute_collection_entries(
+        &mut self,
+        name: &str,
+        second_name: Option<&str>,
+        entries: impl IntoIterator<Item = (Value, Value)>,
+        body: &[Stmt],
+    ) -> ExecutionResult {
+        for (first, second) in entries {
+            self.control.step()?;
+            self.environment.begin_scope();
+            let result = self
+                .environment
+                .define(name.to_owned(), first, false, None, false)
+                .and_then(|()| {
+                    if let Some(name) = second_name {
+                        self.environment
+                            .define(name.to_owned(), second, false, None, false)?;
+                    }
+                    self.execute_statements(body)
+                });
+            self.environment.end_scope();
+            crate::runtime::maybe_collect();
+            match result? {
+                ControlFlow::Break(Jump::Break) => break,
+                flow @ ControlFlow::Break(Jump::Return(_)) => return Ok(flow),
+                ControlFlow::Break(Jump::Continue) | ControlFlow::Continue(()) => {}
+            }
         }
         Ok(ControlFlow::Continue(()))
     }
@@ -592,6 +689,23 @@ impl Interpreter {
             .map(|argument| self.evaluate(argument))
             .collect::<Result<Vec<_>, _>>()?;
 
+        self.invoke_value(callee, values)
+    }
+
+    /// Native collection callbacks share normal invocation rules and add an
+    /// evaluation guard because their arguments did not come from AST evaluation.
+    pub(super) fn invoke_callback(
+        &mut self,
+        callback: &Value,
+        values: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        self.control.enter_evaluation()?;
+        let result = self.invoke_value(callback.clone(), values);
+        self.control.leave_evaluation();
+        result
+    }
+
+    fn invoke_value(&mut self, callee: Value, values: Vec<Value>) -> Result<Value, RuntimeError> {
         match callee {
             Value::Function(function) => {
                 crate::stdlib::check_arity(
@@ -618,7 +732,7 @@ impl Interpreter {
                     ControlFlow::Break(jump) => Err(Self::unexpected_jump(jump)),
                 }
             }
-            Value::NativeFunction(function) => crate::stdlib::call(function, &values),
+            Value::NativeFunction(function) => crate::stdlib::call(self, function, &values),
             other => Err(RuntimeError::new(format!(
                 "cannot call {}; expected Function",
                 other.type_name()

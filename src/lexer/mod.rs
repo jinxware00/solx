@@ -111,6 +111,11 @@ impl Lexer {
                         TokenKind::Greater
                     }
                 }
+                '"' if self.peek() == Some('"') && self.peek_next() == Some('"') => {
+                    self.advance();
+                    self.advance();
+                    TokenKind::String(self.scan_raw_string()?)
+                }
                 '"' | '\'' => TokenKind::String(self.scan_string(ch)?),
                 c if c.is_ascii_digit() => TokenKind::Number(self.scan_number(c)?),
                 c if is_identifier_start(c) => {
@@ -205,6 +210,25 @@ impl Lexer {
             text.push(self.advance().expect("peek confirmed a character"));
         }
         Ok(())
+    }
+
+    fn scan_raw_string(&mut self) -> Result<String, LexError> {
+        let mut value = String::new();
+        while let Some(ch) = self.peek() {
+            if ch == '"'
+                && self.peek_next() == Some('"')
+                && self.chars.get(self.current + 2) == Some(&'"')
+            {
+                self.advance();
+                self.advance();
+                self.advance();
+                return Ok(value);
+            }
+            // advance preserves the existing UTF-8 offsets and line accounting;
+            // raw content is copied verbatim, including CRLF and backslashes.
+            value.push(self.advance().expect("peek confirmed a character"));
+        }
+        Err(self.error("unterminated raw string literal"))
     }
 
     fn scan_string(&mut self, quote: char) -> Result<String, LexError> {
@@ -321,6 +345,7 @@ fn keyword_or_identifier(text: &str) -> TokenKind {
         "global" => TokenKind::Global,
         "if" => TokenKind::If,
         "import" => TokenKind::Import,
+        "in" => TokenKind::In,
         "nil" => TokenKind::Nil,
         "not" => TokenKind::Not,
         "or" => TokenKind::Or,

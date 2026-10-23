@@ -1,3 +1,4 @@
+mod collections;
 mod control;
 pub mod eval;
 

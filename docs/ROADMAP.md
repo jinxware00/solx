@@ -1,0 +1,64 @@
+# Development roadmap
+
+This tracks implemented milestones separately from unfinished work. The
+specification and tests define supported behavior; a roadmap entry is not a
+feature promise or a release announcement.
+
+## Completed source milestones
+
+- Windows extension checker startup workaround and normal-shutdown cleanup
+  (extension 0.3.1, locally packaged and desktop tested).
+- CI definition for Windows, Linux and macOS, plus installer source/VSIX
+  consistency, provenance and archive preservation. Local fixture tests pass;
+  the remote workflow has not run yet.
+- Storable nil with lexical scope preservation and migration guidance.
+- Exact i64 integers, checked arithmetic and exact mixed numeric comparisons.
+- Bounded JSON parsing/serialization with deterministic keys and Unicode support.
+- Collection iteration with snapshot membership, deterministic object ordering
+  and fresh closure bindings.
+- Optional monotonic execution deadlines and bounded runtime file/REPL source.
+- Raw multiline strings, bounded literal replacement, UTF-8 byte length and
+  Unicode scalar conversion helpers.
+- Snapshot callback list map/filter/fold and stable custom sorting with shared
+  execution budgets and normal function/error semantics.
+- Conservative opt-in AST name checking and exact declaration symbols, retaining
+  default syntax-only checks and the UTF-8 JSON protocol.
+- Deterministic generated-source tests and reproducible local benchmark tooling.
+- Extension 0.4.0 source support for current runtime APIs, raw strings, iteration,
+  optional name diagnostics and Outline symbols. Final package validation is
+  tracked separately below.
+
+## Pending integration and artifact validation
+
+- Finish editor integration and record the final source/test results.
+- Rebuild and test the final VSIX and terminal installer from matching sources.
+  Earlier validation records apply only to the artifacts and sources they name.
+
+## Remaining development
+
+- Broader native-operation/allocation/output budgets and iterative destruction
+  of deep runtime values; measure GC pauses and retained process memory.
+- Explicit interpolation and its escaping rules; grapheme APIs if needed.
+- Broader name/signature analysis, expression ranges, multiple error recovery,
+  structured error causes/rethrow and deterministic resource cleanup.
+- Function/return/optional annotations and explicit multiple-result rules.
+- Capability-based file/path/environment/argument/time APIs and isolated seeded
+  randomness; networking/process access needs a clear host access policy.
+- Language-server features, navigation/rename/signature help,
+  comment-preserving formatting, indentation/folding, and a debugger.
+- Persistent checker transport and investigation of the Windows stdin stall;
+  non-Windows/remote editor validation.
+- Explicit VM execution stack/bytecode and tail calls, measured against the
+  existing interpreter and equivalent Lua/LuaJIT/Luau workloads.
+- Project manifest/lockfile/local package tooling, then offline verified caches
+  and resolution. A registry and signing/trust design follow stable local tools.
+  Start with bounded local manifest/entry validation before adding dependency
+  resolution; this remains a proposed milestone, not an implemented command.
+- Real fresh-Windows-VM PATH/upgrade/failure testing, release signing,
+  Marketplace identity/ownership/rendering verification and publication.
+
+Coroutines/async, classes, pattern matching, deep immutability, metaprogramming,
+native interoperability and a JIT remain conditional on concrete use cases and
+measurements. Publication and normal-profile installation are not part of the
+isolated build/test workflow. Validation records must distinguish a local
+automated test, a desktop host run, a VM test and an actual public release.

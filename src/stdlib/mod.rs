@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::interpreter::Interpreter;
 use crate::runtime::value::{ModuleValue, NativeFunction};
 use crate::runtime::{RuntimeError, Value};
 
@@ -17,13 +18,19 @@ type NativeResult = Result<Value, RuntimeError>;
 type List = Rc<RefCell<Vec<Value>>>;
 type Object = Rc<RefCell<HashMap<String, Value>>>;
 
-/// A stateless native function. Identity is its unique registered qualified name.
+/// A native function. Identity is its unique registered qualified name.
 #[derive(Debug, Clone, Copy)]
 pub struct LibraryFunction {
     name: &'static str,
     min: usize,
     max: usize,
-    implementation: fn(&Arguments<'_>) -> NativeResult,
+    implementation: Implementation,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Implementation {
+    Stateless(fn(&Arguments<'_>) -> NativeResult),
+    WithInterpreter(fn(&mut Interpreter, &Arguments<'_>) -> NativeResult),
 }
 
 impl PartialEq for LibraryFunction {
@@ -53,7 +60,20 @@ impl LibraryFunction {
             name,
             min,
             max,
-            implementation,
+            implementation: Implementation::Stateless(implementation),
+        }
+    }
+
+    const fn with_interpreter(
+        name: &'static str,
+        count: usize,
+        implementation: fn(&mut Interpreter, &Arguments<'_>) -> NativeResult,
+    ) -> Self {
+        Self {
+            name,
+            min: count,
+            max: count,
+            implementation: Implementation::WithInterpreter(implementation),
         }
     }
 
@@ -61,12 +81,16 @@ impl LibraryFunction {
         self.name
     }
 
-    fn invoke(self, values: &[Value]) -> NativeResult {
+    fn invoke(self, interpreter: &mut Interpreter, values: &[Value]) -> NativeResult {
         check_arity(self.name, values, self.min, self.max)?;
-        (self.implementation)(&Arguments {
+        let args = Arguments {
             name: self.name,
             values,
-        })
+        };
+        match self.implementation {
+            Implementation::Stateless(function) => function(&args),
+            Implementation::WithInterpreter(function) => function(interpreter, &args),
+        }
     }
 }
 
@@ -98,6 +122,13 @@ impl<'a> Arguments<'a> {
         match &self.values[index] {
             Value::String(value) => Ok(value),
             _ => Err(self.wrong_type(index, "String")),
+        }
+    }
+
+    fn function(&self, index: usize) -> Result<&'a Value, RuntimeError> {
+        match &self.values[index] {
+            value @ (Value::Function(_) | Value::NativeFunction(_)) => Ok(value),
+            _ => Err(self.wrong_type(index, "Function")),
         }
     }
 
@@ -159,10 +190,14 @@ pub(crate) fn check_arity(
     )))
 }
 
-pub(crate) fn call(function: NativeFunction, values: &[Value]) -> NativeResult {
+pub(crate) fn call(
+    interpreter: &mut Interpreter,
+    function: NativeFunction,
+    values: &[Value],
+) -> NativeResult {
     let name = function.name();
     match function {
-        NativeFunction::Library(function) => function.invoke(values),
+        NativeFunction::Library(function) => function.invoke(interpreter, values),
         NativeFunction::Print => {
             println!(
                 "{}",

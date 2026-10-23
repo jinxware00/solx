@@ -3,12 +3,16 @@ use std::{
     io::{self, BufRead, Read, Write},
     path::PathBuf,
     process::ExitCode,
+    time::Duration,
 };
 
 use solx::{
     interpreter::Interpreter,
     lexer::{TokenKind, tokenize},
-    limits::{DEFAULT_MAX_STEPS, ExecutionLimits, MAX_CALL_DEPTH, MAX_IMPORT_DEPTH},
+    limits::{
+        DEFAULT_MAX_SOURCE_BYTES, DEFAULT_MAX_STEPS, ExecutionLimits, MAX_CALL_DEPTH,
+        MAX_IMPORT_DEPTH,
+    },
     parser::{ParseError, parse_with_limits},
 };
 
@@ -39,6 +43,14 @@ struct Cli {
     #[arg(long, conflicts_with = "max_steps")]
     unlimited_steps: bool,
 
+    /// Cooperative elapsed-time limit per run in milliseconds; omitted disables it
+    #[arg(long, value_name = "MS")]
+    timeout_ms: Option<u64>,
+
+    /// Maximum UTF-8 bytes per source buffer or file, including each imported file
+    #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_SOURCE_BYTES)]
+    max_source_bytes: usize,
+
     /// Maximum simultaneous user-function calls (1..32); combined depth also applies
     #[arg(long, value_name = "N", default_value_t = MAX_CALL_DEPTH)]
     max_call_depth: usize,
@@ -64,6 +76,14 @@ struct CheckArgs {
     #[arg(long)]
     json: bool,
 
+    /// Also report names without a declaration in this buffer's lexical scopes
+    #[arg(long)]
+    names: bool,
+
+    /// Include declaration symbols with exact UTF-8 ranges in JSON output
+    #[arg(long, requires = "json")]
+    symbols: bool,
+
     /// Read the current source buffer from stdin (up to 1 MiB)
     #[arg(long, conflicts_with = "file")]
     stdin: bool,
@@ -88,7 +108,8 @@ fn main() -> ExitCode {
 }
 
 fn run_check(args: CheckArgs) -> ExitCode {
-    use solx::check::{MAX_SOURCE_BYTES, check_source, json_report};
+    use solx::analysis::{AnalysisOptions, AnalysisReport, analyze_source};
+    use solx::check::{MAX_SOURCE_BYTES, check_source, json_analysis_report, json_report};
     let source_name = args
         .file
         .as_ref()
@@ -117,13 +138,61 @@ fn run_check(args: CheckArgs) -> ExitCode {
         Ok(source) => source,
         Err(error) => {
             if args.json {
-                println!("{}", json_report(&source_name, None, Some(&error)));
+                println!(
+                    "{}",
+                    json_analysis_report(
+                        &source_name,
+                        &[],
+                        Some(&error),
+                        args.symbols.then_some(&[])
+                    )
+                );
             } else {
                 eprintln!("solx: {error}");
             }
             return ExitCode::from(2);
         }
     };
+    if args.names || args.symbols {
+        let report = match analyze_source(
+            &source,
+            AnalysisOptions {
+                names: args.names,
+                symbols: args.symbols,
+            },
+        ) {
+            Ok(report) => report,
+            Err(error) => AnalysisReport {
+                diagnostics: vec![error],
+                symbols: Vec::new(),
+            },
+        };
+        if args.json {
+            println!(
+                "{}",
+                json_analysis_report(
+                    &source_name,
+                    &report.diagnostics,
+                    None,
+                    args.symbols.then_some(report.symbols.as_slice())
+                )
+            );
+        } else if report.diagnostics.is_empty() {
+            println!("No syntax or name errors in {source_name}");
+        } else {
+            for diagnostic in &report.diagnostics {
+                eprintln!(
+                    "solx: {} at {source_name}:{}:{}",
+                    diagnostic.message, diagnostic.span.line, diagnostic.span.column
+                );
+            }
+        }
+        return if report.diagnostics.is_empty() {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
     match check_source(&source) {
         Ok(()) => {
             if args.json {
@@ -156,6 +225,8 @@ fn run(cli: Cli) -> Result<(), String> {
         },
         max_call_depth: cli.max_call_depth,
         max_import_depth: cli.max_import_depth,
+        max_duration: cli.timeout_ms.map(Duration::from_millis),
+        max_source_bytes: cli.max_source_bytes,
         ..ExecutionLimits::default()
     })
     .map_err(|error| error.to_string())?;
@@ -203,8 +274,8 @@ fn repl(mut interpreter: Interpreter) -> Result<(), String> {
     let cancellation = interpreter.cancellation_token();
     let stdin = io::stdin();
     let mut reader = stdin.lock();
-    let mut line = String::new();
     let mut source = String::new();
+    let max_source_bytes = interpreter.limits().max_source_bytes;
 
     println!("Solx {} interactive mode", env!("CARGO_PKG_VERSION"));
     println!("Type exit or quit to leave; Ctrl+C cancels running code.");
@@ -216,10 +287,9 @@ fn repl(mut interpreter: Interpreter) -> Result<(), String> {
             .flush()
             .map_err(|error| format!("failed to write prompt: {error}"))?;
 
-        line.clear();
-
-        let bytes = match reader.read_line(&mut line) {
-            Ok(bytes) => bytes,
+        let input = match read_repl_line(&mut reader, max_source_bytes.saturating_sub(source.len()))
+        {
+            Ok(input) => input,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => {
                 cancellation.reset();
                 source.clear();
@@ -237,13 +307,21 @@ fn repl(mut interpreter: Interpreter) -> Result<(), String> {
             continue;
         }
 
-        if bytes == 0 {
-            if !source.trim().is_empty() {
-                eprintln!("Error: incomplete input at end of input");
+        let line = match input {
+            ReplLine::TooLong => {
+                eprintln!("Error: source byte limit exceeded ({max_source_bytes})");
+                source.clear();
+                continue;
             }
-            println!();
-            break;
-        }
+            ReplLine::Eof => {
+                if !source.trim().is_empty() {
+                    eprintln!("Error: incomplete input at end of input");
+                }
+                println!();
+                break;
+            }
+            ReplLine::Source(line) => line,
+        };
 
         if source.is_empty() {
             let trimmed = line.trim();
@@ -281,10 +359,40 @@ fn repl(mut interpreter: Interpreter) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ReplLine {
+    Eof,
+    Source(String),
+    TooLong,
+}
+
+fn read_repl_line(reader: &mut impl BufRead, maximum: usize) -> io::Result<ReplLine> {
+    let mut bytes = Vec::new();
+    let limit = u64::try_from(maximum).unwrap_or(u64::MAX).saturating_add(1);
+    (&mut *reader).take(limit).read_until(b'\n', &mut bytes)?;
+    if bytes.len() > maximum {
+        // Discard the rest of this physical line without retaining its bytes.
+        // A truncated suffix must never become the next executable REPL input.
+        if bytes.last() != Some(&b'\n') {
+            reader.skip_until(b'\n')?;
+        }
+        return Ok(ReplLine::TooLong);
+    }
+    if bytes.is_empty() {
+        return Ok(ReplLine::Eof);
+    }
+    String::from_utf8(bytes)
+        .map(ReplLine::Source)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+}
+
 fn needs_more_input(source: &str, error: &ParseError) -> bool {
     // Resource limits cannot be fixed by appending another line, even at EOF.
     if error.limit.is_some() {
         return false;
+    }
+    if error.message == "unterminated raw string literal" {
+        return true;
     }
     let Ok(tokens) = tokenize(source) else {
         return false;
@@ -295,4 +403,40 @@ fn needs_more_input(source: &str, error: &ParseError) -> bool {
     tokens
         .last()
         .is_some_and(|token| token.kind == TokenKind::Eof && token.span == error.span)
+}
+
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+
+    #[test]
+    fn bounded_repl_input_discards_the_entire_oversized_line() {
+        let input = format!(
+            "{}print('must not execute')\nprint('next')\n",
+            "x".repeat(1000)
+        );
+        let mut reader = io::Cursor::new(input.into_bytes());
+        assert_eq!(read_repl_line(&mut reader, 20).unwrap(), ReplLine::TooLong);
+        assert_eq!(
+            read_repl_line(&mut reader, 20).unwrap(),
+            ReplLine::Source("print('next')\n".into())
+        );
+        assert_eq!(read_repl_line(&mut reader, 20).unwrap(), ReplLine::Eof);
+    }
+
+    #[test]
+    fn bounded_repl_input_checks_utf8_bytes_before_decoding_a_truncated_character() {
+        let mut reader = io::Cursor::new("\u{e9}\nnext\n".as_bytes());
+        assert_eq!(read_repl_line(&mut reader, 1).unwrap(), ReplLine::TooLong);
+        assert_eq!(
+            read_repl_line(&mut reader, 5).unwrap(),
+            ReplLine::Source("next\n".into())
+        );
+        let mut exact = io::Cursor::new("\u{e9}\n".as_bytes());
+        assert_eq!(
+            read_repl_line(&mut exact, 3).unwrap(),
+            ReplLine::Source("\u{e9}\n".into())
+        );
+        assert_eq!(read_repl_line(&mut exact, 0).unwrap(), ReplLine::Eof);
+    }
 }

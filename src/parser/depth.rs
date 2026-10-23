@@ -50,7 +50,12 @@ pub(crate) fn check_depth(root: Node<'_>, maximum: usize) -> Result<(), Option<S
                     push(S(statement));
                 }
             }
-            S(Stmt::While { condition, body }) => {
+            S(Stmt::While { condition, body })
+            | S(Stmt::CollectionFor {
+                iterable: condition,
+                body,
+                ..
+            }) => {
                 push(E(condition));
                 for statement in body {
                     push(S(statement));
