@@ -7,6 +7,14 @@ use crate::parser::parse;
 use crate::runtime::value::{NativeFunction, UserFunction};
 use crate::runtime::{Environment, RuntimeError, Value};
 
+enum Jump {
+    Return(Value),
+    Break,
+    Continue,
+}
+
+type ExecutionResult = Result<ControlFlow<Jump>, RuntimeError>;
+
 pub struct Interpreter {
     environment: Environment,
 }
@@ -47,9 +55,7 @@ impl Interpreter {
     pub fn run_program(&mut self, program: &Program) -> Result<(), RuntimeError> {
         match self.execute_statements(&program.statements)? {
             ControlFlow::Continue(()) => Ok(()),
-            ControlFlow::Break(_) => Err(RuntimeError::new(
-                "return is only allowed inside a function",
-            )),
+            ControlFlow::Break(jump) => Err(Self::unexpected_jump(jump)),
         }
     }
 
@@ -57,7 +63,7 @@ impl Interpreter {
         self.environment.get_global(name)
     }
 
-    fn execute(&mut self, statement: &Stmt) -> Result<ControlFlow<Value>, RuntimeError> {
+    fn execute(&mut self, statement: &Stmt) -> ExecutionResult {
         match statement {
             Stmt::Function { name, function } => {
                 let value = self.make_function(Some(name.clone()), function);
@@ -109,6 +115,29 @@ impl Interpreter {
                 }
             }
 
+            Stmt::While { condition, body } => {
+                while self.evaluate(condition)?.is_truthy() {
+                    match self.execute_block(body)? {
+                        ControlFlow::Break(Jump::Break) => break,
+                        flow @ ControlFlow::Break(Jump::Return(_)) => return Ok(flow),
+                        ControlFlow::Break(Jump::Continue) | ControlFlow::Continue(()) => {}
+                    }
+                }
+            }
+
+            Stmt::NumericFor {
+                name,
+                start,
+                limit,
+                step,
+                body,
+            } => {
+                return self.execute_for(name, start, limit, step.as_ref(), body);
+            }
+
+            Stmt::Break => return Ok(ControlFlow::Break(Jump::Break)),
+            Stmt::Continue => return Ok(ControlFlow::Break(Jump::Continue)),
+
             Stmt::Return(values) => {
                 let value = match values.as_slice() {
                     [] => Value::Nil,
@@ -119,17 +148,14 @@ impl Interpreter {
                         ));
                     }
                 };
-                return Ok(ControlFlow::Break(value));
+                return Ok(ControlFlow::Break(Jump::Return(value)));
             }
         }
 
         Ok(ControlFlow::Continue(()))
     }
 
-    fn execute_statements(
-        &mut self,
-        statements: &[Stmt],
-    ) -> Result<ControlFlow<Value>, RuntimeError> {
+    fn execute_statements(&mut self, statements: &[Stmt]) -> ExecutionResult {
         for statement in statements {
             if let ControlFlow::Break(value) = self.execute(statement)? {
                 return Ok(ControlFlow::Break(value));
@@ -138,11 +164,82 @@ impl Interpreter {
         Ok(ControlFlow::Continue(()))
     }
 
-    fn execute_block(&mut self, statements: &[Stmt]) -> Result<ControlFlow<Value>, RuntimeError> {
+    fn execute_block(&mut self, statements: &[Stmt]) -> ExecutionResult {
         self.environment.begin_scope();
         let result = self.execute_statements(statements);
         self.environment.end_scope();
         result
+    }
+
+    fn execute_for(
+        &mut self,
+        name: &str,
+        start: &Expr,
+        limit: &Expr,
+        step: Option<&Expr>,
+        body: &[Stmt],
+    ) -> ExecutionResult {
+        // Evaluate the header once in the enclosing scope, before binding the counter.
+        let start = self.evaluate(start)?;
+        let limit = self.evaluate(limit)?;
+        let step = match step {
+            Some(expression) => self.evaluate(expression)?,
+            None => Value::Number(1.0),
+        };
+        let mut counter = self.require_finite_number(&start, "for loop start")?;
+        let limit = self.require_finite_number(&limit, "for loop limit")?;
+        let step = self.require_finite_number(&step, "for loop step")?;
+        if step == 0.0 {
+            return Err(RuntimeError::new("for loop step must not be zero"));
+        }
+
+        while if step > 0.0 {
+            counter <= limit
+        } else {
+            counter >= limit
+        } {
+            // A new binding per iteration keeps escaped closures independent.
+            self.environment.begin_scope();
+            let result = self
+                .environment
+                .define(name.to_owned(), Value::Number(counter), false, None, false)
+                .and_then(|()| self.execute_statements(body));
+            self.environment.end_scope();
+            match result? {
+                ControlFlow::Break(Jump::Break) => break,
+                flow @ ControlFlow::Break(Jump::Return(_)) => return Ok(flow),
+                ControlFlow::Break(Jump::Continue) | ControlFlow::Continue(()) => {}
+            }
+
+            if counter == limit {
+                break;
+            }
+            let next = counter + step;
+            if next == counter {
+                return Err(RuntimeError::new(
+                    "for loop step does not advance the counter",
+                ));
+            }
+            counter = next;
+        }
+        Ok(ControlFlow::Continue(()))
+    }
+
+    fn require_finite_number(&self, value: &Value, operation: &str) -> Result<f64, RuntimeError> {
+        let number = self.require_number(value, operation)?;
+        if number.is_finite() {
+            Ok(number)
+        } else {
+            Err(RuntimeError::new(format!("{operation} must be finite")))
+        }
+    }
+
+    fn unexpected_jump(jump: Jump) -> RuntimeError {
+        RuntimeError::new(match jump {
+            Jump::Return(_) => "return is only allowed inside a function",
+            Jump::Break => "break is only allowed inside a loop",
+            Jump::Continue => "continue is only allowed inside a loop",
+        })
     }
 
     fn make_function(&self, name: Option<String>, definition: &Function) -> Value {
@@ -267,10 +364,11 @@ impl Interpreter {
                 let result = self.execute_statements(&function.definition.body);
                 // Restore the caller on both returns and runtime errors.
                 self.environment = caller;
-                result.map(|flow| match flow {
-                    ControlFlow::Break(value) => value,
-                    ControlFlow::Continue(()) => Value::Nil,
-                })
+                match result? {
+                    ControlFlow::Break(Jump::Return(value)) => Ok(value),
+                    ControlFlow::Continue(()) => Ok(Value::Nil),
+                    ControlFlow::Break(jump) => Err(Self::unexpected_jump(jump)),
+                }
             }
             Value::NativeFunction(function) => self.call_native(function, &values),
             other => Err(RuntimeError::new(format!(

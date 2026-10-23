@@ -680,3 +680,143 @@ fn rebinding_the_callee_during_arguments_does_not_change_the_active_call() {
     assert_global(&interpreter, "active", Value::Number(11.0));
     assert_global(&interpreter, "subsequent", Value::Number(21.0));
 }
+
+#[test]
+fn recursive_errors_restore_scopes_and_keep_escaped_call_locals() {
+    let mut interpreter = run(r#"
+        var visible = "file"
+        var saved = [nil, nil, nil]
+        fn recurse(n)
+            var visible = n
+            saved[n] = fn() visible = visible + 10 return visible end
+            if n == 1 then return num("bad") end
+            return recurse(n - 1)
+        end
+        "#);
+    let error = interpreter.run_source("recurse(3)").unwrap_err();
+    assert_eq!(error.message, "cannot convert 'bad' to Number");
+    interpreter
+        .run_source(
+            r#"
+        global restored = visible
+        global first = saved[1]()
+        global second = saved[2]()
+        global third = saved[3]()
+        global repeated = saved[1]()
+        "#,
+        )
+        .unwrap();
+    assert_global(&interpreter, "restored", Value::String("file".into()));
+    for (name, value) in [
+        ("first", 11.0),
+        ("second", 12.0),
+        ("third", 13.0),
+        ("repeated", 21.0),
+    ] {
+        assert_global(&interpreter, name, Value::Number(value));
+    }
+}
+
+#[test]
+fn reentrant_closures_share_mutations_but_keep_each_calls_parameter() {
+    let interpreter = run(r#"
+        fn make()
+            var count = 0
+            fn visit(n)
+                count = count + 1
+                if n == 0 then return count end
+                var nested = visit(n - 1)
+                return nested + n
+            end
+            return { visit = visit, read = fn() return count end }
+        end
+        var state = make()
+        global result = state.visit(3)
+        global count = state.read()
+        global again = state.visit(1)
+        "#);
+    assert_global(&interpreter, "result", Value::Number(10.0));
+    assert_global(&interpreter, "count", Value::Number(4.0));
+    assert_global(&interpreter, "again", Value::Number(7.0));
+}
+
+#[test]
+fn nested_extra_arguments_keep_side_effects_without_entering_the_callee() {
+    let mut interpreter = run(r#"
+        var visible = "file"
+        global effects = 0
+        global entered = false
+        fn target(x) entered = true end
+        fn argument() effects = effects + 1 return effects end
+        fn outer()
+            var visible = "caller"
+            return target(argument(), argument())
+        end
+        "#);
+    let error = interpreter.run_source("outer()").unwrap_err();
+    assert_eq!(error.message, "target() expects 1 argument(s), got 2");
+    interpreter.run_source("global restored = visible").unwrap();
+    assert_global(&interpreter, "restored", Value::String("file".into()));
+    assert_global(&interpreter, "effects", Value::Number(2.0));
+    assert_global(&interpreter, "entered", Value::Boolean(false));
+}
+
+#[test]
+fn captured_bindings_observe_redeclaration_and_nil_parameters_keep_shadowing() {
+    let interpreter = run(r#"
+        var value = 99
+        fn make(value)
+            var read = fn() return value end
+            var value = value
+            return { read = read, remove = fn() value = nil end }
+        end
+        var state = make(nil)
+        global initial = state.read()
+        state.remove()
+        global unmasked = state.read()
+        fn redeclare()
+            var count = 1
+            var read = fn() return count end
+            var count = 2
+            return read
+        end
+        global replaced = redeclare()()
+        "#);
+    assert_global(&interpreter, "initial", Value::Nil);
+    assert_global(&interpreter, "unmasked", Value::Number(99.0));
+    assert_global(&interpreter, "replaced", Value::Number(2.0));
+}
+
+#[test]
+fn failed_captured_assignments_leave_values_and_caller_scope_intact() {
+    for (declaration, action, expected) in [
+        (
+            "const value = 1",
+            "value = nil",
+            "cannot reassign constant 'value'",
+        ),
+        (
+            "var value: Number = 1",
+            "value = nil",
+            "type mismatch for 'value': expected Number, got Nil",
+        ),
+        (
+            "var value: Number = 1",
+            "value = 'bad'",
+            "type mismatch for 'value': expected Number, got String",
+        ),
+    ] {
+        let mut interpreter = run(&format!(
+            "var visible = 'file' fn make() {declaration} return {{ fail = fn() var visible = 'inner' {action} end, read = fn() return value end }} end var state = make() fn outer() if true then state.fail() end end"
+        ));
+        assert_eq!(
+            interpreter.run_source("outer()").unwrap_err().message,
+            expected
+        );
+        interpreter
+            .run_source("global retained = state.read() global restored = visible")
+            .unwrap();
+        assert_global(&interpreter, "retained", Value::Number(1.0));
+        assert_global(&interpreter, "restored", Value::String("file".into()));
+    }
+}

@@ -9,6 +9,7 @@ use std::{
 use solx::{
     interpreter::Interpreter,
     lexer::{TokenKind, tokenize},
+    parser::{ParseError, parse},
 };
 
 #[derive(Debug, Parser)]
@@ -115,16 +116,19 @@ fn repl(mut interpreter: Interpreter) -> Result<(), String> {
 
         source.push_str(&line);
 
-        match interpreter.run_source(source.trim()) {
-            Ok(()) => source.clear(),
+        match parse(&source) {
+            Ok(program) => {
+                if let Err(error) = interpreter.run_program(&program) {
+                    eprintln!("Error: {error}");
+                }
+                source.clear();
+            }
             Err(error) => {
-                let message = error.to_string();
-
-                if needs_more_input(&source, &message) {
+                if needs_more_input(&source, &error) {
                     continue;
                 }
 
-                eprintln!("Error: {message}");
+                eprintln!("Error: {error}");
                 source.clear();
             }
         }
@@ -133,33 +137,14 @@ fn repl(mut interpreter: Interpreter) -> Result<(), String> {
     Ok(())
 }
 
-fn needs_more_input(source: &str, error: &str) -> bool {
+fn needs_more_input(source: &str, error: &ParseError) -> bool {
     let Ok(tokens) = tokenize(source) else {
         return false;
     };
 
-    let mut parentheses = 0_i32;
-    let mut brackets = 0_i32;
-    let mut braces = 0_i32;
-    let mut open_blocks = 0_i32;
-
-    for token in &tokens {
-        match &token.kind {
-            TokenKind::LeftParen => parentheses += 1,
-            TokenKind::RightParen => parentheses -= 1,
-            TokenKind::LeftBracket => brackets += 1,
-            TokenKind::RightBracket => brackets -= 1,
-            TokenKind::LeftBrace => braces += 1,
-            TokenKind::RightBrace => braces -= 1,
-            TokenKind::If | TokenKind::Fn => open_blocks += 1,
-            TokenKind::End if open_blocks > 0 => open_blocks -= 1,
-            _ => {}
-        }
-    }
-
-    if parentheses > 0 || brackets > 0 || braces > 0 || open_blocks > 0 {
-        return true;
-    }
-
-    error.to_ascii_lowercase().contains("found eof")
+    // Only a parse error at EOF can be resolved by appending more input.
+    // Runtime error text must never cause already executed code to be retried.
+    tokens
+        .last()
+        .is_some_and(|token| token.kind == TokenKind::Eof && token.span == error.span)
 }

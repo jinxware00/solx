@@ -52,6 +52,7 @@ struct Parser {
     tokens: Vec<Token>,
     current: usize,
     function_depth: usize,
+    loop_depth: usize,
 }
 
 impl Parser {
@@ -60,6 +61,7 @@ impl Parser {
             tokens,
             current: 0,
             function_depth: 0,
+            loop_depth: 0,
         }
     }
 
@@ -100,6 +102,28 @@ impl Parser {
 
         if self.matches(&TokenKind::If) {
             return self.parse_if();
+        }
+
+        if self.matches(&TokenKind::While) {
+            return self.parse_while();
+        }
+
+        if self.matches(&TokenKind::For) {
+            return self.parse_for();
+        }
+
+        if self.matches(&TokenKind::Break) {
+            if self.loop_depth == 0 {
+                return Err(self.error_at_previous("break is only allowed inside a loop"));
+            }
+            return Ok(Stmt::Break);
+        }
+
+        if self.matches(&TokenKind::Continue) {
+            if self.loop_depth == 0 {
+                return Err(self.error_at_previous("continue is only allowed inside a loop"));
+            }
+            return Ok(Stmt::Continue);
         }
 
         if self.matches(&TokenKind::Return) {
@@ -179,7 +203,10 @@ impl Parser {
             "expected ')' after function parameters",
         )?;
         self.function_depth += 1;
+        // Loop control cannot cross a function boundary.
+        let enclosing_loop_depth = std::mem::replace(&mut self.loop_depth, 0);
         let body = self.parse_block();
+        self.loop_depth = enclosing_loop_depth;
         self.function_depth -= 1;
         let body = body?;
         self.consume(&TokenKind::End, "expected 'end' to close function")?;
@@ -240,6 +267,44 @@ impl Parser {
             branches,
             else_branch,
         })
+    }
+
+    fn parse_while(&mut self) -> Result<Stmt, ParseError> {
+        let condition = self.parse_expression(0)?;
+        self.consume(&TokenKind::Do, "expected 'do' after while condition")?;
+        let body = self.parse_loop_body("expected 'end' to close while loop")?;
+        Ok(Stmt::While { condition, body })
+    }
+
+    fn parse_for(&mut self) -> Result<Stmt, ParseError> {
+        let name = self.consume_identifier("expected a loop variable after 'for'")?;
+        self.consume(&TokenKind::Assign, "expected '=' after for loop variable")?;
+        let start = self.parse_expression(0)?;
+        self.consume(&TokenKind::Comma, "expected ',' after for loop start")?;
+        let limit = self.parse_expression(0)?;
+        let step = if self.matches(&TokenKind::Comma) {
+            Some(self.parse_expression(0)?)
+        } else {
+            None
+        };
+        self.consume(&TokenKind::Do, "expected 'do' after for loop bounds")?;
+        let body = self.parse_loop_body("expected 'end' to close for loop")?;
+        Ok(Stmt::NumericFor {
+            name,
+            start,
+            limit,
+            step,
+            body,
+        })
+    }
+
+    fn parse_loop_body(&mut self, end_message: &str) -> Result<Vec<Stmt>, ParseError> {
+        self.loop_depth += 1;
+        let body = self.parse_block();
+        self.loop_depth -= 1;
+        let body = body?;
+        self.consume(&TokenKind::End, end_message)?;
+        Ok(body)
     }
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, ParseError> {

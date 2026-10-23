@@ -390,9 +390,44 @@ while count < 3 do
 end
 ```
 
-The complete numeric-loop rules, including step values and iteration
-behaviour when bounds are reversed, should follow a documented and
-tested specification.
+Numeric loops accept an optional step: `for i = start, limit, step do`
+... `end`. The default step is `1`. Start, limit, and step expressions
+are evaluated once, from left to right in the enclosing scope, before
+binding the loop variable. All three must be finite Numbers, and the
+step must be nonzero, even for an empty range.
+
+The bounds are inclusive: a positive step continues while the counter
+is at most the limit; a negative step continues while it is at least
+the limit. A range facing away from its limit runs zero times. Equal
+bounds run once with either step direction. For example, `for i = 5, 1,
+-2 do print(i) end` prints `5`, `3`, and `1`.
+
+Each iteration has a fresh local scope and loop-variable binding.
+Closures retain the binding of the iteration that created them; they
+still share variables captured from outside the loop. The loop variable
+shadows an enclosing name and is not visible after the loop. Assigning,
+redeclaring, or deleting that visible binding uses the existing variable
+rules and does not change the internal counter or saved bounds.
+
+The current Number representation uses floating-point arithmetic, so
+fractional steps may round. If an increment rounds back to the same
+counter before reaching the limit, execution reports `for loop step
+does not advance the counter`. An increment that overflows past finite
+bounds ends the loop; nonfinite header values are rejected.
+
+`while` evaluates its condition before each iteration, outside the fresh
+body scope, using normal Solx truthiness. Neither loop kind adds a
+general execution limit; a `while` condition must eventually become
+false or the body must exit explicitly.
+
+`break` exits the nearest enclosing loop. `continue` skips the rest of
+that iteration, advancing a numeric counter or reevaluating a `while`
+condition. Both work through nested `if` scopes and are rejected outside
+a loop in the same function. A function declared inside a loop cannot
+break or continue its caller's loop. `return` exits the current function
+through any nested loops. Normal completion, all three control-flow
+statements, and runtime errors restore enclosing scopes; completed
+mutations are retained.
 
 ## 12. Error handling
 
