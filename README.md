@@ -1,23 +1,34 @@
 # Solx
 
-<p align="left">
-  <img src="https://img.shields.io/badge/status-in%20development-orange?style=flat-square" alt="In development" />
-  <img src="https://img.shields.io/badge/language-Rust-black?style=flat-square&logo=rust" alt="Rust" />
-  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License" />
-</p>
+<img src="assets/logo.png" alt="Solx" width="120">
+
+Solx is a small, Lua-inspired language implemented in Rust. It supports
+functions and closures, lists and objects, loops, and explicit module imports.
+It is in early development; see the [specification](docs/SPEC.md) for the
+distinction between implemented behavior and planned features.
 
 ## Example
 
-```lua
+```solx
 var name = "Solx" -- define a variable
 
 fn greet(player) -- making a function
-    print("Hello, {player}!")
+    print("Hello, " .. player .. "!")
 end
 
 greet(name) -- calling a function
 ```
 
-Solx is in early development.
+## Get started
 
----
+Build with stable Rust using `cargo build --release --locked`, then run
+`cargo run -- examples/functions.solx`. Running `solx` without arguments opens
+the interactive console.
+
+The Windows installer includes an optional **Solx Language Support** extension
+for VS Code. Packages currently require a local build; no published release is
+claimed. See [installation instructions](docs/INSTALLING.md), the
+[extension guide](vscode-solx/README.md), and
+[development and packaging](docs/DEVELOPMENT.md).
+
+Licensed under [MIT](LICENSE).

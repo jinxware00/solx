@@ -1,0 +1,165 @@
+{
+  "name": "solx-language-support",
+  "displayName": "Solx Language Support",
+  "description": "Syntax highlighting, run commands, completions, snippets, and hover documentation for Solx.",
+  "version": "0.2.1",
+  "publisher": "jinxware00",
+  "author": {
+    "name": "jinxware00",
+    "url": "https://github.com/jinxware00"
+  },
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "main": "./src/extension.cjs",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onLanguage:solx",
+    "onCommand:solx.runCurrentFile",
+    "onCommand:solx.stopRun"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Highlighting, completions, and hover are available. Running code requires workspace trust.",
+      "restrictedConfigurations": [
+        "solx.executablePath",
+        "solx.cargoManifestPath"
+      ]
+    },
+    "virtualWorkspaces": {
+      "supported": "limited",
+      "description": "Editing tools work; running requires a saved file accessible to the extension host."
+    }
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "solx",
+    "syntax highlighting",
+    "completion",
+    "hover",
+    "snippets"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jinxware00/solx",
+    "directory": "vscode-solx"
+  },
+  "homepage": "https://github.com/jinxware00/solx",
+  "bugs": {
+    "url": "https://github.com/jinxware00/solx/issues"
+  },
+  "files": [
+    "src/**",
+    "data/snippets.json",
+    "images/icon.png",
+    "syntaxes/**",
+    "language-configuration.json",
+    "examples/**",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "test:interpreter": "node --test test/interpreter.cjs",
+    "test:host": "node scripts/test-host.cjs",
+    "icon": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/render-icon.ps1",
+    "test:package": "node scripts/test-host.cjs --package",
+    "vscode:prepublish": "npm test",
+    "package": "vsce package --no-dependencies --no-rewrite-relative-links",
+    "package:files": "vsce ls --no-dependencies"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "solx.runCurrentFile",
+        "title": "Run Current File",
+        "category": "Solx",
+        "icon": "$(play)",
+        "enablement": "isWorkspaceTrusted && !solx.running"
+      },
+      {
+        "command": "solx.stopRun",
+        "title": "Stop Running File",
+        "category": "Solx",
+        "icon": "$(debug-stop)",
+        "enablement": "solx.running"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "solx.runCurrentFile",
+          "when": "editorLangId == solx && resourceScheme == file && isWorkspaceTrusted && !solx.running",
+          "group": "navigation"
+        },
+        {
+          "command": "solx.stopRun",
+          "when": "editorLangId == solx && solx.running",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Solx",
+      "properties": {
+        "solx.executablePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Solx executable path or command name. Empty uses `solx` on PATH. Paths may be absolute or relative to the file's workspace folder; do not add quotes or arguments. Windows requires an `.exe`. For source checkouts, use `solx.cargoManifestPath` instead of a target-directory binary."
+        },
+        "solx.cargoManifestPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to the Solx source checkout's `Cargo.toml`, absolute or relative to the file's workspace folder. When set, Cargo rebuilds before every run. Requires Cargo on PATH and an empty `solx.executablePath`."
+        },
+        "solx.completion.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Suggest confirmed keywords, APIs, type annotations, and code snippets."
+        },
+        "solx.hover.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show reference documentation for recognized built-ins and imported standard-library members."
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "solx",
+        "aliases": [
+          "Solx",
+          "solx"
+        ],
+        "extensions": [
+          ".solx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "solx",
+        "scopeName": "source.solx",
+        "path": "./syntaxes/solx.tmLanguage.json"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
+  }
+}

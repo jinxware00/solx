@@ -1,0 +1,29 @@
+-- Run from the repository root: cargo run -- vscode-solx/examples/hello.solx
+import "string"
+
+const greeting: String = "Hello, Solx!"
+global visits = 0
+
+fn greet(name)
+    visits = visits + 1
+    return greeting .. " Welcome, " .. string.trim(name) .. "."
+end
+
+var guests = [" Jinx ", 'Ada', "Lin"]
+for i = 1, #guests do
+    print(greet(guests[i]))
+end
+
+var summary = { count = visits, ready = true }
+if summary.ready and summary.count >= 3 then
+    print("Greeted " .. str(summary.count) .. " people.")
+else
+    print("Still waiting for guests.")
+end
+
+var remaining = 2
+while remaining > 0 do
+    print("Countdown: " .. str(remaining))
+    remaining = remaining - 1
+end
+print("Done!")
