@@ -199,19 +199,14 @@ pub(crate) fn call(
     match function {
         NativeFunction::Library(function) => function.invoke(interpreter, values),
         NativeFunction::Print => {
-            println!(
-                "{}",
-                values
-                    .iter()
-                    .map(Value::to_solx_string)
-                    .collect::<Vec<_>>()
-                    .join("\t")
-            );
+            // Format the complete line before writing: budget failure emits no prefix.
+            let line = interpreter.format_values(values, "\t", "\n")?;
+            print!("{line}");
             Ok(Value::Nil)
         }
         NativeFunction::Str => {
             check_arity(name, values, 1, 1)?;
-            Ok(Value::String(values[0].to_solx_string()))
+            interpreter.format_values(values, "", "").map(Value::String)
         }
         NativeFunction::Num => {
             check_arity(name, values, 1, 1)?;

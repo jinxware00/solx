@@ -66,6 +66,13 @@ impl Environment {
             .collect()
     }
 
+    pub(super) fn into_collection_scopes(self) -> impl Iterator<Item = super::gc::Node> {
+        self.scopes
+            .into_iter()
+            .chain(std::iter::once(self.globals))
+            .map(super::gc::Node::Scope)
+    }
+
     /// Release this owner's references, without clearing any captured scope.
     pub(crate) fn release_roots(&mut self) {
         self.scopes.clear();

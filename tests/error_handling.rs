@@ -64,7 +64,7 @@ fn catches_real_runtime_failures_and_continues_after_end() {
              catch err global caught = err end global after = 42"
         ));
         let error = interpreter.get_global("caught").unwrap();
-        let Value::String(message) = field(&error, "message") else {
+        let Value::String(ref message) = field(&error, "message") else {
             panic!()
         };
         assert!(message.contains(expected), "{body}: {message}");
@@ -388,7 +388,7 @@ fn failed_import_and_function_calls_restore_definition_paths_and_globals() {
 #[test]
 fn host_collection_borrow_errors_are_catchable_without_panicking() {
     let mut interpreter = run("global items = [1]");
-    let Value::List(items) = interpreter.get_global("items").unwrap() else {
+    let Value::List(ref items) = interpreter.get_global("items").unwrap() else {
         panic!()
     };
     {

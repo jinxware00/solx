@@ -16,6 +16,8 @@ pub const MAX_CALL_DEPTH: usize = 32;
 pub const MAX_IMPORT_DEPTH: usize = 16;
 pub const DEFAULT_MAX_STEPS: u64 = 10_000_000;
 pub const DEFAULT_MAX_SOURCE_BYTES: usize = 1_048_576;
+pub const DEFAULT_MAX_FORMAT_BYTES: usize = 1_048_576;
+pub const DEFAULT_MAX_FORMAT_WORK: u64 = 10_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LimitKind {
@@ -27,6 +29,8 @@ pub enum LimitKind {
     Steps,
     Deadline,
     SourceBytes,
+    FormatBytes,
+    FormatWork,
 }
 
 impl LimitKind {
@@ -40,6 +44,8 @@ impl LimitKind {
             Self::Steps => "execution step",
             Self::Deadline => "execution deadline",
             Self::SourceBytes => "source byte",
+            Self::FormatBytes => "formatted byte",
+            Self::FormatWork => "formatting work",
         };
         format!("{name} limit exceeded ({limit})")
     }
@@ -85,6 +91,12 @@ pub struct ExecutionLimits {
     /// UTF-8 bytes per entry, imported file, or source buffer; zero permits empty input.
     /// Hosts may raise this limit. It does not bound AST or runtime heap allocation.
     pub max_source_bytes: usize,
+    /// UTF-8 bytes per str(), concatenation, or complete print line (including LF).
+    /// This bounds language formatting, not other string allocation or host Display.
+    pub max_format_bytes: usize,
+    /// Formatting traversal/copy/comparison work per public run, shared across calls.
+    /// Independent of max_steps; --unlimited-steps does not disable this budget.
+    pub max_format_work: u64,
 }
 
 impl Default for ExecutionLimits {
@@ -97,6 +109,8 @@ impl Default for ExecutionLimits {
             max_steps: Some(DEFAULT_MAX_STEPS),
             max_duration: None,
             max_source_bytes: DEFAULT_MAX_SOURCE_BYTES,
+            max_format_bytes: DEFAULT_MAX_FORMAT_BYTES,
+            max_format_work: DEFAULT_MAX_FORMAT_WORK,
         }
     }
 }

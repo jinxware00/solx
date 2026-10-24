@@ -22,7 +22,7 @@ fn lists_yield_values_or_one_based_index_value_pairs_including_nil() {
          for index, value in values do list.append(indexed, [index, value]) end
          core.assert(values == [10, nil, false, 'last'])
          core.assert(indexed == [[1, 10], [2, nil], [3, false], [4, 'last']])");
-    let Value::List(indexed) = interpreter.get_global("indexed").unwrap() else {
+    let Value::List(ref indexed) = interpreter.get_global("indexed").unwrap() else {
         panic!("expected list");
     };
     let Value::List(pair) = &indexed.borrow()[0] else {
@@ -229,7 +229,7 @@ fn invalid_collection_types_and_expired_bindings_report_errors() {
 #[test]
 fn host_borrow_conflicts_are_recoverable_and_iteration_releases_its_own_borrow() {
     let mut interpreter = run("global data = [1, 2]");
-    let Value::List(data) = interpreter.get_global("data").unwrap() else {
+    let Value::List(ref data) = interpreter.get_global("data").unwrap() else {
         panic!("expected list");
     };
     {
@@ -246,7 +246,7 @@ fn host_borrow_conflicts_are_recoverable_and_iteration_releases_its_own_borrow()
         .run_source("for value in data do list.remove(data, 1) end core.assert(#data == 0)")
         .unwrap();
     interpreter.run_source("global record = { a = 1 }").unwrap();
-    let Value::Object(record) = interpreter.get_global("record").unwrap() else {
+    let Value::Object(ref record) = interpreter.get_global("record").unwrap() else {
         panic!("expected object");
     };
     {
@@ -320,7 +320,7 @@ fn snapshot_copying_and_empty_body_iterations_consume_the_execution_budget() {
     interpreter
         .run_source("global data = [] global visited = false")
         .unwrap();
-    let Value::List(data) = interpreter.get_global("data").unwrap() else {
+    let Value::List(ref data) = interpreter.get_global("data").unwrap() else {
         panic!("expected list");
     };
     data.borrow_mut().extend((0..100).map(Value::Integer));

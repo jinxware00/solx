@@ -1,8 +1,10 @@
 mod collection_ops;
+mod destruction;
 pub mod environment;
 pub mod error;
 mod gc;
 pub(crate) mod numeric;
+pub(crate) mod render;
 pub mod value;
 
 pub use environment::Environment;

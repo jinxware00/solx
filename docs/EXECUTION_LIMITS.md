@@ -1,20 +1,25 @@
 # Execution limits and cancellation
 
-The tree-walking interpreter now stops excessive syntax nesting, deep ASTs,
-recursive execution, import chains, and runaway evaluation with ordinary Rust
-errors. This is an unreleased source change. Rebuild Solx to use it; existing
-installed copies and distribution ZIP/VSIX packages have not been updated.
+The tree-walking interpreter stops excessive syntax nesting, deep ASTs,
+recursive execution, import chains, and runaway evaluation with structured
+errors. Current source also provides optional deadlines, bounded source reads,
+and formatting byte/work budgets. Rebuild to use source changes; package
+validation applies only to the source and artifact hashes in its receipt.
 
 ## Defaults and counting
 
-| Limit | Default and maximum | What it counts |
+| Limit | Default | What it counts |
 | --- | --- | --- |
 | Parser nesting | 64 | Active statement and expression parser entries, combined. |
 | AST depth | 128 | Nodes along a syntax-tree path, including source-location wrappers. |
 | Evaluation depth | 64 | Active statement and expression evaluations, across functions and imports. |
-| Function call depth | 32 | Active user-function calls. Native functions do not recursively call Solx. |
+| Function call depth | 32 | Active user-function calls, including user functions invoked by native helpers. |
 | Import depth | 16 | Active uncached imports, including built-ins; the entry file is excluded. |
-| Evaluation steps | 10,000,000 by default | One per executed statement, evaluated expression, and entered loop iteration. |
+| Evaluation steps | 10,000,000 | Executed statements, evaluated expressions, loop iterations, and explicit collection work described below. |
+| Elapsed deadline | Disabled | Monotonic elapsed time per public run, checked cooperatively. |
+| Source bytes | 1,048,576 | UTF-8 bytes per runtime source buffer or file. |
+| Formatted bytes | 1,048,576 | UTF-8 bytes per `str`, concatenation, or complete `print` line. |
+| Formatting work | 10,000,000 | Formatting traversal, copy, and comparison work per public run. |
 
 The five depth defaults are also conservative ceilings for this recursive
 implementation. Hosts can lower them, but cannot disable or raise them. They
@@ -31,17 +36,27 @@ evaluated or charged. `Located` metadata wrappers do not add execution steps.
 An empty program needs no steps; a zero budget rejects its first evaluation.
 This counts interpreter work, not bytecode instructions, CPU time, or bytes.
 
+Collection iteration charges snapshot entries and iterations. Callback list
+operations charge snapshot copies, visits, merge movements, and normal callback
+evaluation. Native callbacks can invoke Solx functions; they share the caller's
+step, depth, deadline, and formatting controls. See [COLLECTION_APIS.md](COLLECTION_APIS.md)
+for their detailed counting and mutation rules. Formatting work uses a separate
+counter and does not consume additional evaluation steps.
+
 ## Command line
 
 ```sh
 solx --max-steps 50000 program.solx
 solx --max-call-depth 12 --max-import-depth 8 program.solx
+solx --timeout-ms 1000 --max-format-bytes 65536 program.solx
 solx --unlimited-steps program.solx
 ```
 
 `--unlimited-steps` disables only the step budget and conflicts with an explicit
-`--max-steps`. Depth checks and cancellation remain active. Use `solx --help`
-for the options; invalid depths fail before executing user code.
+`--max-steps`. Depth, source, formatting, cancellation, and any configured
+deadline remain active. Use `solx --help` for the options; invalid depths fail
+before executing user code. [RESOURCE_BUDGETS.md](RESOURCE_BUDGETS.md) defines
+`--timeout-ms`, `--max-source-bytes`, `--max-format-bytes`, and `--max-format-work`.
 
 Ctrl+C requests cooperative cancellation. On Windows, Solx explicitly enables
 Ctrl+C delivery after registering its handler, including when its launcher
@@ -90,19 +105,21 @@ or another controller is still active.
 
 `RuntimeError.kind` distinguishes `Language`, `LimitExceeded(LimitKind)`, and
 `Cancelled`; `is_catchable()` is true only for language errors. `ParseError.limit`
-is `Some(LimitKind)` for parser resource failures, otherwise None. These are new
-public metadata fields: Rust callers constructing either error with struct
-literals need to supply them. The optional `RuntimeError.location` is now boxed
+is `Some(LimitKind)` for parser resource failures, otherwise None. Rust callers
+constructing either error with struct literals need to supply these metadata
+fields. The optional `RuntimeError.location` is boxed
 to keep diagnostic data off recursive Result stack frames; Rust callers
 constructing that field need `Some(Box::new(location))`. Location contents,
 error messages/traces, and Solx catch-object fields are unchanged.
 
 ## Interruption and restoration
 
-Limit failures and cancellation bypass Solx `try`/`catch`. A script therefore
-cannot catch exhaustion and resume a runaway loop. Ordinary syntax errors in
+Interpreter limit failures and cancellation bypass Solx `try`/`catch`. A script
+therefore cannot catch exhaustion and resume a runaway loop. Ordinary syntax errors in
 imported modules, user-raised errors, and other language failures retain their
 existing catch behavior. Imported parser-limit failures preserve their kind.
+Library validation errors, including JSON's separate size/depth checks, remain
+catchable language errors.
 
 Scopes, call depth, evaluation depth, import loading state, and diagnostic
 context are restored during unwinding. Completed assignments and mutations
@@ -118,22 +135,33 @@ still owns and must safely dispose of a rejected, manually built deep AST.
 
 ## Limits of this protection
 
-Cancellation is checked at evaluation/loop checkpoints, before imports, and
-around parsing. It does not interrupt a lexer/parser pass, filesystem operation,
-native library call, output write, collection traversal, or synchronous GC pass
-already in progress. A single native call can perform substantial work. There
-is no wall-clock deadline, allocation cap, output cap, filesystem sandbox, or
-out-of-memory recovery.
+Cancellation and optional deadlines are checked at evaluation/loop checkpoints,
+before imports, around parsing, during collection snapshot/callback work, and
+between formatting traversal/copy/comparison operations. They do not preempt a
+lexer/parser pass, filesystem operation, output write, synchronous GC pass, or
+other native work already underway. A single uninterrupted native operation
+can still perform substantial work.
 
-Recursive destruction of deep runtime value graphs is still a separate risk.
-Manually built host ASTs and unusually small host thread stacks also need care.
-No Rust stack overflow is caught or converted after it happens. The next
-architectural work is an explicit execution stack/bytecode VM, with allocation
-and native-operation budgets and memory/latency profiling alongside it.
+Language formatting has per-operation byte and per-run work limits. These do
+not cover all string construction, diagnostics, Rust host Display/Debug, or
+total process output. There is no total heap/allocation cap, hard process
+timeout, filesystem sandbox, or out-of-memory recovery.
 
-## Validation
+Runtime value destruction uses an explicit worklist for lists, objects,
+functions, captured scopes, and module exports; shared values remain intact and
+cycles still use the collector. Teardown is synchronous and has no work or
+memory budget. Parsing, evaluation, and function AST clone/drop retain recursive
+paths. Manually built deep host ASTs and unusually small host thread stacks
+still need care; no Rust stack overflow is caught after it happens. See
+[MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md) for the ownership contract and Rust
+API migration. An explicit execution stack, broader native/allocation budgets,
+and memory/latency profiling remain future work.
 
-Observed on Windows after implementation:
+## Historical validation: initial execution-limit milestone
+
+These are the original Windows results, not current suite totals or validation
+of later deadlines, source limits, formatting, or iterative destruction.
+Current integration outcomes belong in [OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md).
 
 | Check | Result |
 | --- | --- |
@@ -147,7 +175,7 @@ Observed on Windows after implementation:
 | Release CLI: `examples/error_handling.solx` and `--help` | Passed |
 | `git diff --check` | Passed |
 
-The new tests cover parser boundaries and positions, malformed partial trees,
+That milestone's tests cover parser boundaries and positions, malformed partial trees,
 deep left/postfix chains, wide shallow programs, host AST rejection, exact step
 accounting, empty loops, recursion, cancellation, scope/closure restoration,
 shared import budgets, cache behavior, failed-import retry, and REPL recovery.

@@ -6,6 +6,7 @@ pub(super) struct Control {
     pub limits: ExecutionLimits,
     pub cancellation: CancellationToken,
     remaining_steps: Option<u64>,
+    remaining_format_work: u64,
     elapsed_budget: Option<(Instant, Duration)>,
     depth: usize,
     calls: usize,
@@ -18,6 +19,7 @@ impl Control {
             limits,
             cancellation: CancellationToken::default(),
             remaining_steps: limits.max_steps,
+            remaining_format_work: limits.max_format_work,
             elapsed_budget: None,
             depth: 0,
             calls: 0,
@@ -28,6 +30,7 @@ impl Control {
     pub fn begin_run(&mut self) -> Result<(), RuntimeError> {
         debug_assert_eq!((self.depth, self.calls, self.imports), (0, 0, 0));
         self.remaining_steps = self.limits.max_steps;
+        self.remaining_format_work = self.limits.max_format_work;
         self.elapsed_budget = self
             .limits
             .max_duration
@@ -70,6 +73,18 @@ impl Control {
             }
             *remaining -= 1;
         }
+        Ok(())
+    }
+
+    pub fn format_work(&mut self, units: usize) -> Result<(), RuntimeError> {
+        self.check_cancelled()?;
+        let units = u64::try_from(units).unwrap_or(u64::MAX);
+        self.remaining_format_work =
+            self.remaining_format_work
+                .checked_sub(units)
+                .ok_or_else(|| {
+                    RuntimeError::limit(LimitKind::FormatWork, self.limits.max_format_work)
+                })?;
         Ok(())
     }
 
@@ -200,6 +215,35 @@ mod tests {
         assert_eq!(
             control.begin_run().unwrap_err().kind,
             RuntimeErrorKind::LimitExceeded(LimitKind::Deadline)
+        );
+    }
+
+    #[test]
+    fn format_work_checks_interruptions_without_consuming_evaluation_steps() {
+        let mut control = Control::new(ExecutionLimits {
+            max_steps: Some(1),
+            max_format_work: 2,
+            max_duration: Some(Duration::from_secs(3600)),
+            ..ExecutionLimits::default()
+        });
+        control.begin_run().unwrap();
+        control.format_work(2).unwrap();
+        control.step().unwrap();
+        assert_eq!(
+            control.format_work(1).unwrap_err().kind,
+            RuntimeErrorKind::LimitExceeded(LimitKind::FormatWork)
+        );
+        control.begin_run().unwrap();
+        control.format_work(2).unwrap();
+        control.elapsed_budget.as_mut().unwrap().1 = Duration::ZERO;
+        assert_eq!(
+            control.format_work(0).unwrap_err().kind,
+            RuntimeErrorKind::LimitExceeded(LimitKind::Deadline)
+        );
+        control.cancellation.cancel();
+        assert_eq!(
+            control.format_work(0).unwrap_err().kind,
+            RuntimeErrorKind::Cancelled
         );
     }
 }

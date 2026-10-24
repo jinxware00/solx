@@ -344,7 +344,7 @@ fn host_borrowed_equality_and_search_preserve_runtime_errors_and_recover() {
     interpreter
         .run_source("fn fail()\n  return a == num('bad')\nend")
         .unwrap();
-    let Value::List(items) = interpreter.get_global("a").unwrap() else {
+    let Value::List(ref items) = interpreter.get_global("a").unwrap() else {
         unreachable!()
     };
     let guard = items.borrow_mut();

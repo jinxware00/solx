@@ -201,7 +201,7 @@ fn host_nonfinite_numbers_are_rejected_by_native_apis_without_mutation() {
     interpreter
         .run_source("import 'math' import 'list' global values=[3,1,0]")
         .unwrap();
-    let Value::List(values) = interpreter.get_global("values").unwrap() else {
+    let Value::List(ref values) = interpreter.get_global("values").unwrap() else {
         unreachable!()
     };
     for value in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {

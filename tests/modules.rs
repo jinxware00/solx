@@ -25,7 +25,7 @@ fn host_borrow_of_exposed_exports_reports_errors_without_losing_the_cache() {
     interpreter
         .run_source("import './exposed.solx' as m global exposed = m.exposed")
         .unwrap();
-    let Value::Object(exports) = interpreter.get_global("exposed").unwrap() else {
+    let Value::Object(ref exports) = interpreter.get_global("exposed").unwrap() else {
         panic!("expected exported map");
     };
     {

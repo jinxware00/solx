@@ -11,7 +11,7 @@ fn setup(value: Value) -> Interpreter {
     interpreter
         .run_source("import 'json' global host = [nil]")
         .unwrap();
-    let Value::List(slot) = interpreter.get_global("host").unwrap() else {
+    let Value::List(ref slot) = interpreter.get_global("host").unwrap() else {
         unreachable!()
     };
     slot.borrow_mut()[0] = value;
@@ -29,10 +29,10 @@ fn parse(text: &str) -> Result<Value, RuntimeError> {
 }
 
 fn stringify(value: Value) -> Result<String, RuntimeError> {
-    let Value::String(text) = call("stringify", value)? else {
+    let Value::String(ref mut text) = call("stringify", value)? else {
         unreachable!()
     };
-    Ok(text)
+    Ok(std::mem::take(text))
 }
 
 // Avoid printing a potentially megabyte-sized successful result on failure.
@@ -492,7 +492,7 @@ fn json_errors_are_catchable_and_the_interpreter_recovers() {
              global recovered = json.parse('true')",
         )
         .unwrap();
-    let Value::String(message) = interpreter.get_global("message").unwrap() else {
+    let Value::String(ref message) = interpreter.get_global("message").unwrap() else {
         unreachable!()
     };
     assert!(message.starts_with("json.parse(): invalid JSON:"));

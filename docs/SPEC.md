@@ -105,7 +105,8 @@ explicitly through the module's `exports` object (section 13).
 
 ### 4.3 Constants
 
-`const` declares a value that cannot be reassigned.
+`const` declares a binding that cannot be reassigned or redeclared in the same
+scope. An inner scope may shadow it with a separate binding.
 
 ``` lua
 const pi = 3.14159
@@ -123,9 +124,10 @@ normal scope resolution.
 
 ### 4.5 Undeclared variables
 
-Reading an undeclared variable triggers a warning and then an error when
-its value is actually used. A spelling mistake should not silently
-become a new variable.
+Evaluating a reference to an undeclared variable immediately emits a warning
+and raises a runtime error. Skipped branches and short-circuited operands are
+not evaluated. Assignment to an undeclared name also warns and errors; it does
+not create a new binding.
 
 ## 5. `nil` and absence
 
@@ -217,6 +219,10 @@ Solx uses Lua's operator set and precedence rules.
 -   `num()` converts supported values to numbers.
 -   `str()` converts supported values to strings.
 -   `print()` remains available.
+
+`str`, `..`, and `print` use the formatting byte/work limits in section 12.4.
+Concatenation limits apply to the combined result; they do not merely check
+each operand separately.
 
 Numeric conversion, arithmetic, and comparison follow [NUMBERS.md](NUMBERS.md).
 `#text` counts Unicode scalar values; `#list` counts stored entries, including
@@ -325,7 +331,7 @@ render a back-reference on the current traversal path as `<cycle>`.
 For example, a list containing itself prints `[<cycle>]`; an object with
 `self` referring to itself prints `{self = <cycle>}`. Repeated sharing
 without a cycle still prints each occurrence in full. Ordinary Solx
-formatting, including sorting rendered object entries, is unchanged.
+text representations, including sorting rendered object entries, are unchanged.
 The marker is diagnostic text, not a new literal or serialization format.
 
 Collection equality compares structural contents: matching list lengths
@@ -337,13 +343,15 @@ Sharing topology does not affect equality. Scalar rules remain unchanged,
 including `NaN ~= NaN` even inside the same collection; functions and
 modules retain identity equality. `list.find` uses these same rules.
 
-Formatting, Debug, and equality use explicit traversal stacks. Debug
-quotes strings and keeps functions/modules opaque. A collection currently
-mutably borrowed by a Rust host renders as `<borrowed>`; ordinary Solx
-execution does not expose such borrows. These operations do not themselves
-collect cycles or guarantee bounded output size. Collection checkpoints are
-described below. Ordinary acyclic graph destruction is still recursive and
-has separate limits; see `RUNTIME_AUDIT.md`.
+Formatting, Debug, and equality use explicit traversal stacks. Debug quotes
+strings and keeps functions/modules opaque. Language `str`, `print`, and
+concatenation obey section 12.4's byte/work budgets and return a catchable runtime
+error if a needed collection is mutably borrowed by a Rust host. Rust host
+`Value::to_solx_string`, Display, and Debug preserve the `<borrowed>` marker and
+remain unbounded compatibility APIs; ordinary Solx execution does not expose
+host borrow guards. Equality returns false when a needed borrow is unavailable.
+These operations do not themselves collect cycles. Collection checkpoints and
+iterative value destruction are described below.
 
 ### 9.5 Memory management (implemented)
 
@@ -374,11 +382,22 @@ Holding a host Value after its Interpreter is destroyed is supported; after
 dropping the last host root, collect explicitly or use the next interpreter
 checkpoint. Normal Solx allocations are registered automatically.
 
-This is cycle collection, not a moving heap, a sandbox, a memory budget, or a
-guarantee of bounded pauses. Execution and syntax limits are specified in
-section 12.4. Ordinary deep acyclic value destruction remains recursive. See
+Uniquely owned runtime graphs are destroyed through an explicit worklist,
+including lists, objects, functions, captured scopes, and module exports.
+Shared nodes retain their identity and contents; cycles still require the
+collector. Assignment, removal, return/error unwinding, and interpreter cleanup
+use the same destruction mechanism. This removes graph-depth recursion from
+runtime value teardown without changing Solx collection semantics.
+
+Collection and destruction are synchronous and require temporary storage;
+neither provides a heap cap or bounded pause guarantee. Parsing, evaluation,
+and function AST clone/drop retain recursive paths with the guards in section
+12.4. Arbitrarily deep ASTs built directly by Rust callers remain outside those
+runtime graph guarantees. `Value` now implements Rust `Drop`, so hosts extracting
+non-Copy payloads must borrow the enum and clone an Rc or take a String instead
+of moving a field out through a by-value match. See
 [MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md) for the ownership contract,
-algorithm, measurements, and remaining work.
+API migration, measurements, and remaining work.
 
 ## 10. Functions
 
@@ -558,15 +577,18 @@ print("Program continues")
 ```
 
 -   The `try` body runs normally.
--   If a runtime error occurs, execution transfers to `catch`.
+-   A recoverable language runtime error transfers execution to `catch`.
+    Interpreter limit failures (section 12.4) and cooperative cancellation
+    bypass handlers.
 -   `err` receives an Object containing the error information below.
 -   Execution continues after the closing `end`.
 -   If no error occurs, `catch` is skipped.
 -   A source buffer is fully lexed and parsed before any of it executes.
     Its syntax errors cannot be caught by a handler in that buffer.
     Imports load separate buffers during execution, so a surrounding
-    handler in the importer can catch a module's read, syntax, or
-    initialization failure. Failed modules remain eligible for retry.
+    handler in the importer can catch ordinary read, syntax, or initialization
+    errors. Parser/source/execution resource limits still bypass handlers.
+    Failed modules remain eligible for retry.
 
 Syntax is `try ... catch name ... end`: exactly one handler and a required
 identifier. Empty bodies are allowed. Try and catch each have a separate
@@ -605,6 +627,8 @@ are not implemented. There is no `finally`/`defer` syntax yet. Catching
 Rust panics, stack exhaustion, allocation failure, or process termination
 is outside this mechanism. Execution-limit failures and cooperative cancellation
 also bypass handlers (section 12.4). Cycle collection is separate (section 9.5).
+Library validation errors, including JSON's separate size/depth checks, remain
+catchable language errors.
 
 Run `cargo run -- examples/error_handling.solx` for a working example.
 
@@ -648,7 +672,9 @@ expression spans, unique REPL-buffer names, and suggestions are deferred.
 Each public interpreter run starts a fresh evaluation budget of 10,000,000
 steps by default. Each executed statement, evaluated expression, and entered
 loop iteration costs one step; metadata wrappers and short-circuited operands
-do not. Functions, imports, and catch handlers share the caller's budget.
+do not. Collection snapshots, visits, and callback-sort merge movements also
+consume steps as described in sections 11 and 14. Functions, imports, callbacks,
+and catch handlers share the caller's budget.
 A zero budget allows only empty programs. CLI `--max-steps N` and the Rust
 `ExecutionLimits` API configure it; `--unlimited-steps` or host `None` disables
 only the step budget.
@@ -677,10 +703,13 @@ request after the interrupted buffer and accepts another command; embedders
 must explicitly reset their token after the run/controller have ended. The
 token is thread-safe, while the interpreter remains single-threaded.
 
-Checks occur at evaluation/loop boundaries, before imports, and around parsing.
-They do not preempt native calls, parsing, I/O, output, or GC already underway.
-These controls do not provide a total heap budget, a hard process timeout, a
-sandbox, or a proof for every host stack. Deep runtime value destruction remains recursive.
+Checks occur at evaluation/loop boundaries, before imports, around parsing,
+during collection snapshot/callback work, and between formatting traversal,
+copy, and comparison operations. They do not preempt parsing, I/O, output, GC,
+destruction, or a native operation without an internal checkpoint. These controls
+do not provide a total heap budget, a hard process timeout, a sandbox, or a proof
+for every host stack. Runtime value destruction uses the iterative mechanism in
+section 9.5; this does not make arbitrary host ASTs stack-safe.
 See [EXECUTION_LIMITS.md](EXECUTION_LIMITS.md) for APIs, CLI options, counting,
 tested behavior, and remaining work toward an explicit execution stack.
 
@@ -688,8 +717,27 @@ Runtime executions also support an optional monotonic deadline and a configurabl
 source-byte budget (default 1 MiB per file/buffer). File and REPL input is read
 with bounds. `--timeout-ms` is disabled by default; `--max-source-bytes` adjusts
 runtime input size. Both budget failures bypass try/catch. Deadlines are
-cooperative and do not preempt native work or filesystem reads. See
-[RESOURCE_BUDGETS.md](RESOURCE_BUDGETS.md) for the exact scope and host API.
+cooperative and do not preempt an uninterrupted native operation or filesystem
+read.
+
+Language formatting defaults to **1 MiB of UTF-8 text per `str`, concatenation,
+or complete `print` line**, including print's tabs and final LF. The entire line
+is formatted before output, so a formatting failure writes no partial line from
+that call. Already-completed output and argument side effects remain. A separate
+**10,000,000-unit formatting work budget per public run** accounts for traversal,
+copying, comparison, and rearrangement. Functions, imports, and callbacks share
+it. `--max-format-bytes` and `--max-format-work` configure these limits;
+`--unlimited-steps` disables neither. Zero formatted bytes allow an empty-string
+conversion but not a newline; zero work rejects value conversion. Size/work
+failures are noncatchable `LimitExceeded(FormatBytes)` or
+`LimitExceeded(FormatWork)` errors. Work units are implementation counts, not a
+stable instruction or elapsed-time contract.
+
+These budgets do not cover all String allocation, diagnostic rendering, total
+process output, or Rust host Display/Debug. JSON and selected string library
+functions keep their separately documented limits. See
+[RESOURCE_BUDGETS.md](RESOURCE_BUDGETS.md) for the exact scope, compatibility
+changes, and host API.
 
 ### 12.5 Non-executing checking and declaration symbols (implemented)
 
@@ -844,7 +892,8 @@ and a capability model for untrusted code.
 
 `print(...)` prints tab-separated values plus a newline
 and returns nil; zero arguments print a blank line. `str(value)` accepts
-one value and uses the existing Solx formatting. `num(value)` accepts one
+one value and uses Solx formatting. Both obey section 12.4's formatting budgets;
+printing formats the complete line before writing it. `num(value)` accepts one
 Number or a trimmed numeric String using section 6.2's checked numeric rules;
 other types, invalid strings, nonfinite numbers and out-of-range integer
 strings error. All three remain global, first-class, and shadowable.
@@ -910,6 +959,7 @@ borrow. Nested reference values remain shared; callback side effects persist,
 including on failure. They do not mutate source membership themselves and return
 no partial result on error. Snapshots, visits, merge movements and callbacks
 share the current run's steps, deadline, cancellation and call/evaluation limits.
+Formatting performed by callbacks also shares the run's formatting work budget.
 Ordinary callback errors are catchable; budget failures and cancellation are
 not. Sorting uses a fallible iterative stable merge procedure; inconsistent
 comparators need not produce a globally ordered result. Detailed callback,
@@ -1022,12 +1072,14 @@ planned or require further design; none implies a published package. See
 -   [ ] String interpolation.
 -   [x] Callback list map/filter/fold and stable custom sorting.
 -   [x] Bounded JSON parsing and serialization.
--   [x] Cooperative cancellation, depth/step limits, optional deadlines and source limits.
+-   [x] Cooperative cancellation, depth/step limits, optional deadlines, source limits,
+    and language formatting byte/work budgets.
 -   [x] Non-executing syntax checks, optional name analysis and declaration symbols.
 -   [x] Explicit imports for bundled standard libraries.
 -   [x] Both file-path and module-name imports.
 -   [x] Procedural and functional programming; no classes initially.
 -   [x] Automatic garbage collection.
+-   [x] Iterative destruction of runtime value graphs.
 -   [ ] More compact heap/value representations, subject to measurement.
 -   [ ] Explicit VM stack, bytecode execution and tail calls.
 -   [ ] Project manifest/lockfile and package tooling from section 16.
@@ -1050,8 +1102,9 @@ The following remain open beyond the implemented rules above:
 - Expression-level runtime spans, structured rethrow/causes, multiple syntax
   error recovery and broader static analysis. Current variable annotations are
   runtime checks.
-- Allocation/native-operation/output budgets, iterative value destruction,
-  collector tuning, compact representations and an explicit VM stack.
+- Total allocation budgets, broader native-operation and diagnostic/output
+  controls beyond bounded language formatting, collector tuning, compact
+  representations and an explicit VM stack.
 - Navigation/rename, signature help, formatting and debugger protocols.
 - Further benchmark workloads, memory/GC measurements and acceptance thresholds;
   release signing and fresh-machine validation.

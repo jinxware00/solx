@@ -45,8 +45,8 @@ pub(super) fn format(value: &Value, debug: bool) -> String {
     let mut rendered: Vec<String> = Vec::new();
     while let Some(task) = tasks.pop() {
         match task {
-            Task::Visit(Value::List(items)) => {
-                let id = Identity::List(Rc::as_ptr(&items) as usize);
+            Task::Visit(Value::List(ref items)) => {
+                let id = Identity::List(Rc::as_ptr(items) as usize);
                 if !active.insert(id) {
                     rendered.push("<cycle>".into());
                     continue;
@@ -59,8 +59,8 @@ pub(super) fn format(value: &Value, debug: bool) -> String {
                 tasks.push(Task::List(id, items.len()));
                 tasks.extend(items.iter().rev().cloned().map(Task::Visit));
             }
-            Task::Visit(Value::Object(properties)) => {
-                let id = Identity::Object(Rc::as_ptr(&properties) as usize);
+            Task::Visit(Value::Object(ref properties)) => {
+                let id = Identity::Object(Rc::as_ptr(properties) as usize);
                 if !active.insert(id) {
                     rendered.push("<cycle>".into());
                     continue;
@@ -78,7 +78,7 @@ pub(super) fn format(value: &Value, debug: bool) -> String {
                 tasks.extend(values.into_iter().rev().map(Task::Visit));
             }
             Task::Visit(value) => rendered.push(if debug {
-                match value {
+                match &value {
                     Value::Nil => "Nil".into(),
                     Value::Boolean(value) => format!("Boolean({value:?})"),
                     Value::Integer(value) => format!("Integer({value})"),
@@ -128,21 +128,21 @@ pub(super) fn equal(left: &Value, right: &Value) -> bool {
     let mut visited = HashSet::new();
     let mut pending = vec![(left.clone(), right.clone())];
     while let Some((left, right)) = pending.pop() {
-        match (left, right) {
+        match (&left, &right) {
             (Value::Nil, Value::Nil) => {}
             (Value::Boolean(a), Value::Boolean(b)) if a == b => {}
-            (ref a, ref b)
+            (a, b)
                 if super::numeric::is_number(a)
                     && super::numeric::is_number(b)
                     && super::numeric::compare(a, b) == Some(std::cmp::Ordering::Equal) => {}
             (Value::String(a), Value::String(b)) if a == b => {}
-            (Value::Function(a), Value::Function(b)) if Rc::ptr_eq(&a, &b) => {}
+            (Value::Function(a), Value::Function(b)) if Rc::ptr_eq(a, b) => {}
             (Value::NativeFunction(a), Value::NativeFunction(b)) if a == b => {}
-            (Value::Module(a), Value::Module(b)) if Rc::ptr_eq(&a, &b) => {}
+            (Value::Module(a), Value::Module(b)) if Rc::ptr_eq(a, b) => {}
             (Value::List(a), Value::List(b)) => {
                 let pair = (
-                    Identity::List(Rc::as_ptr(&a) as usize),
-                    Identity::List(Rc::as_ptr(&b) as usize),
+                    Identity::List(Rc::as_ptr(a) as usize),
+                    Identity::List(Rc::as_ptr(b) as usize),
                 );
                 if !visited.insert(pair) {
                     continue;
@@ -157,8 +157,8 @@ pub(super) fn equal(left: &Value, right: &Value) -> bool {
             }
             (Value::Object(a), Value::Object(b)) => {
                 let pair = (
-                    Identity::Object(Rc::as_ptr(&a) as usize),
-                    Identity::Object(Rc::as_ptr(&b) as usize),
+                    Identity::Object(Rc::as_ptr(a) as usize),
+                    Identity::Object(Rc::as_ptr(b) as usize),
                 );
                 if !visited.insert(pair) {
                     continue;

@@ -61,11 +61,12 @@ fn aliased_exports_and_host_namespace_survive_initialization_and_interpreter_dro
     let mut interpreter = Interpreter::new();
     interpreter.run_file(entry).unwrap();
     let namespace = interpreter.get_global("namespace").unwrap();
-    let Value::Object(exports) = interpreter.get_global("exposed").unwrap() else {
+    let exposed = interpreter.get_global("exposed").unwrap();
+    let Value::Object(exports) = &exposed else {
         panic!()
     };
-    let weak = Rc::downgrade(&exports);
-    drop(exports);
+    let weak = Rc::downgrade(exports);
+    drop(exposed);
     interpreter
         .run_source("namespace = nil exposed = nil")
         .unwrap();
@@ -98,11 +99,12 @@ fn module_cache_is_a_root_even_after_all_import_bindings_leave_scope() {
     );
     let mut interpreter = Interpreter::new();
     interpreter.run_file(entry).unwrap();
-    let Value::Object(state) = interpreter.get_global("state").unwrap() else {
+    let state_value = interpreter.get_global("state").unwrap();
+    let Value::Object(state) = &state_value else {
         panic!()
     };
-    let weak = Rc::downgrade(&state);
-    drop(state);
+    let weak = Rc::downgrade(state);
+    drop(state_value);
     interpreter.run_source("state = nil").unwrap();
     collect_garbage();
     assert!(weak.upgrade().is_some());
@@ -135,11 +137,12 @@ fn failed_module_escapes_stay_live_and_overwritten_closures_are_collected() {
     );
     let mut interpreter = Interpreter::new();
     interpreter.run_file(entry).unwrap();
-    let Value::Function(previous) = interpreter.get_global("previous").unwrap() else {
+    let previous_value = interpreter.get_global("previous").unwrap();
+    let Value::Function(previous) = &previous_value else {
         panic!()
     };
-    let weak = Rc::downgrade(&previous);
-    drop(previous);
+    let weak = Rc::downgrade(previous);
+    drop(previous_value);
     collect_garbage();
     interpreter
         .run_source(

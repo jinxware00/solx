@@ -5,9 +5,45 @@ Automatic cycle collection is now implemented; see
 [MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md) for the current ownership contract,
 algorithm, tests, and remaining limitations. The earlier leak probes have been
 updated to assert reclamation. [Execution and syntax limits plus cancellation](EXECUTION_LIMITS.md)
-are also now implemented; arbitrary host graphs, native-operation budgets, and
-recursive runtime-value destruction remain limitations. The audit below records
+are also now implemented. Runtime-value destruction is now iterative, including
+lists, objects, closure scopes, and module exports; see the 2026-10-24 follow-up
+below. Arbitrary host ASTs, native-operation budgets, and synchronous GC pauses
+still require separate consideration. The audit below records
 the earlier baseline, rather than the current implementation of these guards.
+
+## Follow-up: recursive runtime destruction (2026-10-24)
+
+A rebuilt debug CLI running `var x=nil for i=1,20000 do x=[x] end x=nil` crashed
+inside a watched subprocess with stack-overflow status `3221225725`. The source
+is shallow and remains within default execution limits: dropping the last list
+owner recursively released `Rc -> RefCell -> Vec<Value> -> Rc` descendants.
+Parsing/evaluation depth guards cannot prevent that ownership path.
+
+`src/runtime/destruction.rs` now processes uniquely owned list, object, function,
+scope, and module nodes iteratively with `Rc::try_unwrap`. `Value::drop` transfers
+the last owner into that worklist before releasing its payload. Shared nodes
+remain unchanged; cycles still use the reference-count-aware collector. This
+uses safe Rust and does not add registry roots, reference leaks, unsafe aliasing,
+or delayed acyclic reclamation. The public Rc payload types remain unchanged,
+but Rust consumers must borrow enum patterns instead of moving non-Copy payloads
+from a Value with Drop. The migration and algorithm invariants are documented in
+[MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md#iterative-destruction-2026-10-24).
+
+The failing CLI case passes after the fix. Watched subprocess regressions verify
+100,000-level list/mixed-object graphs and 20,000 alternating function/module
+layers with scopes on a requested 256 KiB stack. They assert weak-handle expiry,
+shared-root preservation, ordinary and cyclic collection, mutations/removal,
+host raw-Rc teardown, borrowed-container behavior, and cleanup after returns,
+errors, execution limits, and cancellation. The first integrated post-fix run
+passed 407 tests and strict Clippy; subsequent integrated receipts, including the
+additional cancellation test, are maintained in
+[OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md).
+
+This closes the demonstrated runtime-value crash; it does not make destruction
+interruptible, bound heap allocation or GC pauses, or protect arbitrary manually
+constructed Rust ASTs. Syntax/evaluation limits and remaining resource gaps are
+documented independently. The older findings and test counts below are retained
+as historical audit evidence.
 
 This audit covers the existing tree-walking interpreter. It introduces no
 collector, unsafe code, dependencies, bytecode execution, or new language

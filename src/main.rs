@@ -10,8 +10,8 @@ use solx::{
     interpreter::Interpreter,
     lexer::{TokenKind, tokenize},
     limits::{
-        DEFAULT_MAX_SOURCE_BYTES, DEFAULT_MAX_STEPS, ExecutionLimits, MAX_CALL_DEPTH,
-        MAX_IMPORT_DEPTH,
+        DEFAULT_MAX_FORMAT_BYTES, DEFAULT_MAX_FORMAT_WORK, DEFAULT_MAX_SOURCE_BYTES,
+        DEFAULT_MAX_STEPS, ExecutionLimits, MAX_CALL_DEPTH, MAX_IMPORT_DEPTH,
     },
     parser::{ParseError, parse_with_limits},
 };
@@ -50,6 +50,14 @@ struct Cli {
     /// Maximum UTF-8 bytes per source buffer or file, including each imported file
     #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_SOURCE_BYTES)]
     max_source_bytes: usize,
+
+    /// Maximum UTF-8 bytes per str(), concatenation, or complete print line
+    #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_FORMAT_BYTES)]
+    max_format_bytes: usize,
+
+    /// Maximum formatting traversal/copy/comparison work per run
+    #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_FORMAT_WORK)]
+    max_format_work: u64,
 
     /// Maximum simultaneous user-function calls (1..32); combined depth also applies
     #[arg(long, value_name = "N", default_value_t = MAX_CALL_DEPTH)]
@@ -227,6 +235,8 @@ fn run(cli: Cli) -> Result<(), String> {
         max_import_depth: cli.max_import_depth,
         max_duration: cli.timeout_ms.map(Duration::from_millis),
         max_source_bytes: cli.max_source_bytes,
+        max_format_bytes: cli.max_format_bytes,
+        max_format_work: cli.max_format_work,
         ..ExecutionLimits::default()
     })
     .map_err(|error| error.to_string())?;

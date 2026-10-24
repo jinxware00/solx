@@ -5,9 +5,10 @@ variables, binding constants and runtime variable annotations, functions and
 closures, numeric/collection/while loops, separate lists and objects, explicit
 cached modules, and a standard library with bounded JSON, string utilities and
 callback collection operations. Structured runtime errors, automatic cycle
-collection, raw multiline strings, exact integers and storable nil are
-implemented. [Execution controls](RESOURCE_BUDGETS.md) include optional deadlines
-and source limits; [static analysis](ANALYSIS.md) adds optional name checks and
+collection, iterative runtime graph destruction, raw multiline strings, exact
+integers and storable nil are implemented. [Execution controls](RESOURCE_BUDGETS.md)
+include optional deadlines, source limits, and language formatting byte/work
+budgets; [static analysis](ANALYSIS.md) adds optional name checks and
 declaration symbols. These changes do not establish performance or reliability
 superiority over Lua or Luau.
 
@@ -71,7 +72,8 @@ print("Program continues")
 Handlers run in their own scope; completed side effects remain. Return and
 loop-control jumps pass through normally. Handler failures propagate outward.
 The current source buffer must parse before execution; an importer can catch
-an imported buffer's load/parse failure. Full rules and limitations are in
+an imported buffer's ordinary load/parse failure. Interpreter limit failures and
+cooperative cancellation bypass handlers. Full rules and limitations are in
 [SPEC section 12](SPEC.md#12-error-handling).
 
 The new tests exercise real parser/runtime failures, source positions,
@@ -95,8 +97,8 @@ arithmetic; see [NIL_MIGRATION.md](NIL_MIGRATION.md) and [NUMBERS.md](NUMBERS.md
 
 | Priority | Improvement | Why and acceptance criteria |
 | --- | --- | --- |
-| 1 | Profile and harden memory management | Cycle collection is implemented with the existing Rc API, including host roots, closures, and module exports. Measure larger heaps and pause distributions; add allocation budgets and evaluate future heap representations. See [MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md). |
-| 2 | Move toward an explicit VM stack and resource budgets | Depth/step limits, cancellation, optional monotonic deadlines and bounded source reads are implemented. Add allocation/native-operation/output budgets and address recursive value destruction; then build and benchmark an explicit stack/bytecode VM and tail calls. See [RESOURCE_BUDGETS.md](RESOURCE_BUDGETS.md). |
+| 1 | Profile and harden memory management | Cycle collection and iterative runtime graph destruction preserve existing Rc host roots, closures, and module exports. Measure retained memory and pause distributions with bounded workloads; add allocation budgets and evaluate future heap representations. See [MEMORY_MANAGEMENT.md](MEMORY_MANAGEMENT.md). |
+| 2 | Move toward an explicit VM stack and broader resource budgets | Depth/step limits, cancellation, optional monotonic deadlines, bounded source reads, and language formatting byte/work limits are implemented. Other native operations, diagnostic output, allocation, GC, and teardown still lack general budgets. Profile these before choosing an explicit stack/bytecode VM and tail calls. See [RESOURCE_BUDGETS.md](RESOURCE_BUDGETS.md). |
 | 3 | Extend the settled Number and nil foundations | Exact i64 integers, checked arithmetic, exact mixed comparisons, and storable nil are implemented. Optional/union annotations and multiple-result rules remain open; retain explicit migration notes for further compatibility changes. |
 | 4 | Better errors and editor checking | Syntax checks, optional conservative name analysis and declaration symbols are implemented; see [CHECKING.md](CHECKING.md). Next add expression ranges, error categories/causes, structured rethrow, stronger name/signature analysis and navigation. Existing variable annotations check at runtime. |
 | 5 | Build on practical iteration and library APIs | List/object snapshot iteration and map/filter/fold/custom sorting are implemented with explicit mutation, callback-failure and budget rules. Expand APIs only with concrete use cases; see [ITERATION.md](ITERATION.md) and [COLLECTION_APIS.md](COLLECTION_APIS.md). |
@@ -107,6 +109,15 @@ Coroutines/async, metaprogramming, classes, and a JIT require concrete use
 cases and measurements. They should not displace memory correctness, precise
 semantics, diagnostics, or a useful standard library. Nothing here claims to
 fix every issue in Lua or Luau.
+
+The formatting limits are a compatibility restriction: large conversions,
+concatenations, or accumulated formatting work can fail with a noncatchable
+resource error. Hosts can configure the limits. Host Display/Debug retain their
+unbounded APIs; they are not a fallback for bounded script execution. Runtime
+destruction is iterative, while evaluator/parser and function AST paths remain
+recursive. These changes do not establish a security sandbox or a hard memory
+or latency guarantee. Current integration results are recorded separately in
+[OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md).
 
 ## Historical validation and change scope: try/catch milestone
 

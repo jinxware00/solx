@@ -8,7 +8,7 @@ fn setup(values: Vec<Value>) -> Interpreter {
     interpreter
         .run_source("import 'string' global host = []")
         .unwrap();
-    let Value::List(slot) = interpreter.get_global("host").unwrap() else {
+    let Value::List(ref slot) = interpreter.get_global("host").unwrap() else {
         unreachable!()
     };
     *slot.borrow_mut() = values;
@@ -235,7 +235,7 @@ fn replacement_preflights_growth_but_allows_large_inputs_that_shrink() {
         vec![text(&"a".repeat(MAX_BYTES / 2)), text("a"), text("aa")],
     )
     .unwrap();
-    let Value::String(at_limit) = at_limit else {
+    let Value::String(at_limit) = &at_limit else {
         unreachable!()
     };
     assert_eq!(at_limit.len(), MAX_BYTES);
@@ -292,7 +292,7 @@ fn unicode_conversions_enforce_entry_and_utf8_byte_boundaries() {
 
     let values = vec![Value::Integer(0x1f642); MAX_BYTES / 4];
     let at_limit = call("from_codepoints", vec![Value::list(values.clone())]).unwrap();
-    let Value::String(at_limit) = at_limit else {
+    let Value::String(at_limit) = &at_limit else {
         unreachable!()
     };
     assert_eq!(at_limit.len(), MAX_BYTES);

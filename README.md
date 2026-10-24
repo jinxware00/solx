@@ -18,12 +18,14 @@ distinction between implemented behavior and planned features.
 The [language review](docs/LANGUAGE_REVIEW.md) records current gaps, lessons
 from the official Lua source, and the next development priorities.
 Automatic [cycle collection](docs/MEMORY_MANAGEMENT.md) reclaims unreachable
-closures and collections while preserving values held by Rust callers.
+closures and collections while preserving values held by Rust callers;
+runtime graph destruction uses an explicit worklist.
 [Execution limits and Ctrl+C cancellation](docs/EXECUTION_LIMITS.md) stop
 runaway evaluation and bound syntax, call, and import depth.
-[Optional deadlines and source limits](docs/RESOURCE_BUDGETS.md) add
-`--timeout-ms` and a configurable 1 MiB runtime input limit. Deadlines are
-cooperative; they do not preempt native operations or I/O.
+[Resource controls](docs/RESOURCE_BUDGETS.md) add `--timeout-ms`, configurable
+source limits, and byte/work budgets for `str`, concatenation, and `print`.
+Defaults allow 1 MiB per source buffer and formatting operation. Checks are
+cooperative; they do not impose a total heap cap or preempt blocking I/O.
 Use `solx check file.solx` for [non-executing syntax checks](docs/CHECKING.md),
 also available as live diagnostics in the VS Code extension. Opt in to
 [name analysis and declaration symbols](docs/ANALYSIS.md) with

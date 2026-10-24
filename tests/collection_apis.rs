@@ -75,13 +75,13 @@ fn fold_is_left_to_right_can_store_nil_and_returns_the_empty_initial_value() {
         Some(Value::String("123".into()))
     );
     assert_eq!(interpreter.get_global("optional"), Some(Value::Integer(77)));
-    let (Value::Object(initial), Value::Object(empty)) = (
+    let (Value::Object(ref initial), Value::Object(ref empty)) = (
         interpreter.get_global("initial").unwrap(),
         interpreter.get_global("empty").unwrap(),
     ) else {
         unreachable!()
     };
-    assert!(Rc::ptr_eq(&initial, &empty));
+    assert!(Rc::ptr_eq(initial, empty));
 }
 
 #[test]
@@ -95,13 +95,13 @@ fn map_filter_and_sorted_always_return_new_lists_including_empty_inputs() {
             let interpreter = run(&format!(
                 "global input = {source} global output = list.{operation}(input, {callback})"
             ));
-            let (Value::List(input), Value::List(output)) = (
+            let (Value::List(ref input), Value::List(ref output)) = (
                 interpreter.get_global("input").unwrap(),
                 interpreter.get_global("output").unwrap(),
             ) else {
                 unreachable!()
             };
-            assert!(!Rc::ptr_eq(&input, &output));
+            assert!(!Rc::ptr_eq(input, output));
         }
     }
 }
@@ -315,7 +315,7 @@ fn sorting_rejects_bad_comparator_results_without_helper_mutation() {
 fn sorting_rejects_nonfinite_host_results_without_numeric_conversion() {
     for number in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let mut interpreter = run("global host = [nil] global input = [2, 1]");
-        let Value::List(host) = interpreter.get_global("host").unwrap() else {
+        let Value::List(ref host) = interpreter.get_global("host").unwrap() else {
             unreachable!()
         };
         host.borrow_mut()[0] = Value::Number(number);
@@ -337,7 +337,7 @@ fn inconsistent_comparators_terminate_with_a_permutation_and_bounded_calls() {
          global output = list.sorted(input, fn(a, b) calls = calls + 1 \
              if calls % 3 == 0 then return 0 elseif calls % 2 == 0 then return -1 end return 1 end)",
     );
-    let Value::List(output) = interpreter.get_global("output").unwrap() else {
+    let Value::List(ref output) = interpreter.get_global("output").unwrap() else {
         unreachable!()
     };
     let mut numbers: Vec<_> = output
@@ -363,7 +363,7 @@ fn snapshots_report_host_borrow_conflicts_and_release_borrows_before_callbacks()
     let mut interpreter = run(
         "global input = [1, 2] global calls = 0 fn callback(value) calls = calls + 1 return value end",
     );
-    let Value::List(items) = interpreter.get_global("input").unwrap() else {
+    let Value::List(ref items) = interpreter.get_global("input").unwrap() else {
         unreachable!()
     };
     for (operation, tail) in [
@@ -424,7 +424,7 @@ fn snapshot_copying_and_native_callback_visits_consume_the_shared_step_budget() 
     })
     .unwrap();
     interpreter.run_source("import 'list' global input = [] global calls = 0 fn visit(value) calls = calls + 1 return value end").unwrap();
-    let Value::List(input) = interpreter.get_global("input").unwrap() else {
+    let Value::List(ref input) = interpreter.get_global("input").unwrap() else {
         unreachable!()
     };
     input.borrow_mut().extend((0..1000).map(Value::Integer));

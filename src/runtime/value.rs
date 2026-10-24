@@ -94,6 +94,27 @@ pub enum Value {
     Module(Rc<ModuleValue>),
 }
 
+impl Drop for Value {
+    fn drop(&mut self) {
+        let unique = match self {
+            Self::List(value) => Rc::strong_count(value) == 1,
+            Self::Object(value) => Rc::strong_count(value) == 1,
+            Self::Function(value) => Rc::strong_count(value) == 1,
+            Self::Module(value) => Rc::strong_count(value) == 1,
+            _ => false,
+        };
+        if !unique {
+            return;
+        }
+        let node = super::gc::Node::from_value(self).expect("unique graph value");
+        // Assignment invokes Drop once more, but the new Node owner makes that
+        // invocation return immediately. This safely transfers ownership without
+        // unsafe field reads, replacement allocations, or a thread-local queue.
+        *self = Self::Nil;
+        super::destruction::drain(node);
+    }
+}
+
 impl Value {
     pub fn list(items: Vec<Value>) -> Self {
         Self::List(Rc::new(RefCell::new(items))).tracked()
@@ -127,6 +148,8 @@ impl Value {
         !matches!(self, Self::Nil | Self::Boolean(false))
     }
 
+    /// Unbounded host compatibility formatting. Language str/print/concatenation
+    /// use the interpreter's fallible byte/work-limited renderer instead.
     pub fn to_solx_string(&self) -> String {
         super::collection_ops::format(self, false)
     }
@@ -227,11 +250,12 @@ mod tests {
         interpreter
             .run_source("global f = fn() return 1 end")
             .unwrap();
-        let Value::Function(function) = interpreter.get_global("f").unwrap() else {
+        let value = interpreter.get_global("f").unwrap();
+        let Value::Function(function) = &value else {
             unreachable!()
         };
-        let weak = Rc::downgrade(&function);
-        drop(function);
+        let weak = Rc::downgrade(function);
+        drop(value);
         drop(interpreter);
         assert!(weak.upgrade().is_none());
     }

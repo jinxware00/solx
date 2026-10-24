@@ -8,8 +8,10 @@ failure recoverable.
 
 ## Ownership contract
 
-The existing `Value` variants and their `Rc` payloads are preserved. Ordinary
-acyclic values still release when their last strong owner disappears. Solx
+The existing `Value` variants and their `Rc` payload types are preserved. Ordinary
+acyclic values still release when their last strong owner disappears. Their
+destruction uses an explicit worklist, including closure environments and module
+exports, instead of recursively dropping a value graph. Solx
 allocations register weak references with a thread-local collector; the
 registry itself does not keep payloads alive. There is no unsafe Rust, new
 dependency, weak closure capture, moving heap, finalizer, or syntax change.
@@ -33,6 +35,88 @@ successful dependency, and those closures must remain usable.
 The `Rc` graph remains single-threaded. Collection on one thread considers all
 registered graphs on that thread, including other live interpreters. It does
 not operate on another thread's state.
+
+## Iterative destruction (2026-10-24)
+
+`Value::drop` checks whether it is the sole strong owner of a collection,
+function, or module. If so, it creates a worklist owner and replaces itself with
+`Nil`. The replacement invokes `Drop` once more, but that invocation sees the
+additional owner and immediately returns. The maximum nesting caused by this
+transfer is one extra call, independent of graph depth. No unsafe reads,
+placeholder allocations, thread-local destruction queue, or leaked owners are
+used.
+
+The worklist consumes nodes with `Rc::try_unwrap`. A uniquely owned container
+transfers each outgoing graph edge to the worklist before dropping the original
+child Value. Functions transfer their captured scope owners; modules transfer
+their export-map owner. Shared nodes are only decremented and retain their
+identity and contents. If several pending edges own the same node, its last
+pending owner releases it. Unreachable cycles still require the existing
+collector. Weak registrations never prevent `try_unwrap` from succeeding.
+
+Owned `RefCell::into_inner` needs no borrow, so even a forgotten host borrow guard
+does not force recursive teardown. A live borrowed host root continues to hold
+its graph; no shared container is cleared by this destructor. Dropping a raw
+`Rc<RefCell<Vec<Value>>>`, `Rc<ModuleValue>`, or `Rc<UserFunction>` also reaches
+the iterative destructor at its child Values. Environment release, assignment,
+removal, error unwinding, and collection checkpoints use the same mechanism.
+
+Destruction is synchronous and requires worklist storage proportional to the
+pending graph edges. It does not impose a heap cap, guarantee pause latency, or
+recover from allocation failure. The invariant applies to the runtime graph;
+function AST destruction retains the separately documented syntax-depth limits.
+Arbitrarily deep ASTs built directly by Rust callers remain outside this claim.
+
+### Rust API migration
+
+`Value` now implements `Drop`, so Rust no longer permits moving a non-`Copy`
+payload out through a by-value enum pattern. Match `&value` and clone an `Rc` if
+an independently owned host handle is needed:
+
+```rust
+# use solx::runtime::Value;
+let value = Value::list(vec![]);
+let Value::List(items) = &value else { unreachable!() };
+let host_owner = items.clone();
+drop(value);
+assert!(host_owner.borrow().is_empty());
+```
+
+To extract an owned String without copying its bytes, match `&mut value` and
+call `std::mem::take` on that String. Whole Values can still be moved or cloned,
+raw variants can still be constructed, and scalar `Copy` payloads can still be
+matched by value. Solx programs have no language-semantic migration for this fix.
+
+### Destruction validation
+
+The original watched CLI regression, `var x=nil for i=1,20000 do x=[x] end x=nil`,
+aborted with Windows status `3221225725` (`0xC00000FD`, stack overflow). After the
+fix it exits successfully. Tests use separate child processes with a 30-second
+watchdog, and host graph tests explicitly request a 256 KiB Rust thread stack.
+Weak probes verify immediate reclamation of every node, rather than merely
+checking successful process exit.
+
+`tests/deep_destruction.rs` covers 100,000-level raw lists/mixed objects, final raw
+Rc ownership, duplicate/shared edges, live borrows, replacement/removal under
+parent borrows, deep cycles and ordinary GC, Environment clones, type errors,
+returns, runtime errors, execution-budget interruption, cancellation, and
+forgotten borrow flags. A runtime unit test constructs 20,000 alternating
+function/module layers with captured scopes, then drops the last raw function
+handle and verifies that all weak function/module probes expire.
+
+The first complete post-fix `cargo test --locked --quiet` run passed 407 tests
+(including four independent semantic crosschecks). Strict all-target Clippy also
+passed. One additional cancellation regression was then added and is included in
+the integrated validation recorded in [OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md).
+During test development, a fixture named `object` shadowed the standard-library
+module; renaming that local restored the intended removal check. The first
+cancellation fixture allowed a 100,000-node synchronous GC pass to consume its
+controller delay before execution entered the deep local. Its failed assertion
+then tried to format the graph and the watchdog terminated it at 30 seconds.
+The fixture now completes the initial GC before scheduling cancellation and
+uses an assertion that does not render deep values; the corrected targeted test
+passes. These Windows observations do not establish arbitrary host stack sizes
+or platform support.
 
 ## Collection algorithm
 
@@ -107,7 +191,7 @@ counts on the thread. Reclaimed means the payload has no strong owners; Rust
 Weak handles may still retain an allocation's control block. These counts are
 not byte measurements, RSS, or guarantees that the OS receives memory back.
 
-## Validation
+## Cycle-collection milestone validation (2026-10-23)
 
 The pre-change baseline passed 209 Rust tests. After implementation:
 
@@ -156,9 +240,9 @@ graphs can remain retained indefinitely while a host keeps guards alive.
 Host-only allocation loops need explicit checkpoints. Automatic collection
 does not impose an allocation cap or recover from out-of-memory failures.
 
-Ordinary deep acyclic destruction, parsing, expression evaluation, function
-calls, imports, and AST clone/drop still use recursive paths. Safely collecting
-a large cycle does not establish that arbitrary deep programs are stack-safe.
+Parsing, expression evaluation, function calls, imports, and AST clone/drop
+still use recursive paths. Runtime graph destruction is now iterative as
+described above; arbitrary deep programs are not thereby stack-safe.
 Execution/AST guards and cooperative cancellation are now implemented in
 [EXECUTION_LIMITS.md](EXECUTION_LIMITS.md). They do not bound value-graph depth,
 allocation size, or GC work. An explicit VM stack remains major work. Broader

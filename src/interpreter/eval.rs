@@ -65,6 +65,21 @@ impl Interpreter {
         self.control.limits
     }
 
+    pub(crate) fn format_values(
+        &mut self,
+        values: &[Value],
+        separator: &str,
+        suffix: &str,
+    ) -> Result<String, RuntimeError> {
+        crate::runtime::render::render_values(
+            values,
+            separator,
+            suffix,
+            self.control.limits.max_format_bytes,
+            |units| self.control.format_work(units),
+        )
+    }
+
     /// Clone this token to request cooperative cancellation from another thread.
     pub fn cancellation_token(&self) -> CancellationToken {
         self.control.cancellation.clone()
@@ -497,14 +512,15 @@ impl Interpreter {
         }
         // Evaluate once before introducing bindings. Snapshot references remain
         // GC roots, and release the collection borrow before the body can mutate it.
-        match self.evaluate(iterable)? {
+        let iterable_value = self.evaluate(iterable)?;
+        match &iterable_value {
             Value::List(items) => {
                 let mut snapshot = Vec::new();
-                for value in read_collection(&items, "collection iteration")?.iter() {
+                for value in read_collection(items, "collection iteration")?.iter() {
                     self.control.step()?;
                     snapshot.push(value.clone());
                 }
-                drop(items);
+                drop(iterable_value);
                 let entries = snapshot.into_iter().enumerate().map(|(index, value)| {
                     if second_name.is_some() {
                         (crate::runtime::numeric::count(index + 1), value)
@@ -518,11 +534,11 @@ impl Interpreter {
                 // Incremental ordered insertion checks interruption between entries,
                 // instead of performing an unchecked full sort after copying.
                 let mut snapshot = BTreeMap::new();
-                for (key, value) in read_collection(&properties, "collection iteration")?.iter() {
+                for (key, value) in read_collection(properties, "collection iteration")?.iter() {
                     self.control.step()?;
                     snapshot.insert(key.clone(), value.clone());
                 }
-                drop(properties);
+                drop(iterable_value);
                 let entries = snapshot
                     .into_iter()
                     .map(|(key, value)| (Value::String(key), value));
@@ -614,15 +630,15 @@ impl Interpreter {
                 match op {
                     UnaryOp::Negate => crate::runtime::numeric::negate(&value),
                     UnaryOp::Not => Ok(Value::Boolean(!value.is_truthy())),
-                    UnaryOp::Length => match value {
+                    UnaryOp::Length => match &value {
                         Value::String(text) => {
                             Ok(crate::runtime::numeric::count(text.chars().count()))
                         }
                         Value::List(items) => Ok(crate::runtime::numeric::count(
-                            read_collection(&items, "operator '#'")?.len(),
+                            read_collection(items, "operator '#'")?.len(),
                         )),
                         Value::Object(properties) => Ok(crate::runtime::numeric::count(
-                            read_collection(&properties, "operator '#'")?.len(),
+                            read_collection(properties, "operator '#'")?.len(),
                         )),
                         other => Err(RuntimeError::new(format!(
                             "operator '#' does not support {}",
@@ -706,7 +722,7 @@ impl Interpreter {
     }
 
     fn invoke_value(&mut self, callee: Value, values: Vec<Value>) -> Result<Value, RuntimeError> {
-        match callee {
+        match &callee {
             Value::Function(function) => {
                 crate::stdlib::check_arity(
                     function.name.as_deref().unwrap_or("<anonymous>"),
@@ -716,7 +732,7 @@ impl Interpreter {
                 )?;
 
                 let result = self.control.enter_call().and_then(|()| {
-                    let result = self.call_function(&function, values);
+                    let result = self.call_function(function, values);
                     self.control.leave_call();
                     result
                 });
@@ -732,7 +748,7 @@ impl Interpreter {
                     ControlFlow::Break(jump) => Err(Self::unexpected_jump(jump)),
                 }
             }
-            Value::NativeFunction(function) => crate::stdlib::call(self, function, &values),
+            Value::NativeFunction(function) => crate::stdlib::call(self, *function, &values),
             other => Err(RuntimeError::new(format!(
                 "cannot call {}; expected Function",
                 other.type_name()
@@ -755,7 +771,7 @@ impl Interpreter {
     }
 
     fn evaluate_binary(
-        &self,
+        &mut self,
         left: Value,
         op: &BinaryOp,
         right: Value,
@@ -767,11 +783,9 @@ impl Interpreter {
                 crate::runtime::numeric::binary(&left, op, &right)
             }
 
-            Concatenate => Ok(Value::String(format!(
-                "{}{}",
-                left.to_solx_string(),
-                right.to_solx_string()
-            ))),
+            Concatenate => self
+                .format_values(&[left, right], "", "")
+                .map(Value::String),
 
             Equal => Ok(Value::Boolean(left == right)),
             NotEqual => Ok(Value::Boolean(left != right)),
@@ -811,9 +825,9 @@ impl Interpreter {
     }
 
     fn read_index(&self, object: Value, index: Value) -> Result<Value, RuntimeError> {
-        match object {
-            Value::Module(module) => match index {
-                Value::String(key) => module.get(&key),
+        match &object {
+            Value::Module(module) => match &index {
+                Value::String(key) => module.get(key),
                 _ => Err(RuntimeError::new("module index must be a String")),
             },
             Value::List(items) => {
@@ -825,7 +839,7 @@ impl Interpreter {
                     }
                 };
 
-                let items = read_collection(&items, "list indexing")?;
+                let items = read_collection(items, "list indexing")?;
 
                 match items.get(index - 1) {
                     Some(value) => Ok(value.clone()),
@@ -837,14 +851,14 @@ impl Interpreter {
             }
 
             Value::Object(properties) => {
-                let key = match index {
+                let key = match &index {
                     Value::String(key) => key,
                     _ => {
                         return Err(RuntimeError::new("object index must be a String"));
                     }
                 };
 
-                match read_collection(&properties, "object indexing")?.get(&key) {
+                match read_collection(properties, "object indexing")?.get(key) {
                     Some(value) => Ok(value.clone()),
                     None => {
                         eprintln!("Warning: missing object property '{key}'");
@@ -861,10 +875,10 @@ impl Interpreter {
     }
 
     fn read_property(&self, object: Value, name: &str) -> Result<Value, RuntimeError> {
-        match object {
+        match &object {
             Value::Module(module) => module.get(name),
             Value::Object(properties) => {
-                match read_collection(&properties, "property access")?.get(name) {
+                match read_collection(properties, "property access")?.get(name) {
                     Some(value) => Ok(value.clone()),
                     None => {
                         eprintln!("Warning: missing object property '{name}'");
@@ -890,11 +904,11 @@ impl Interpreter {
                 if matches!(object, Value::Module(_)) {
                     return Err(RuntimeError::new("module namespace is read-only"));
                 }
-                let Value::Object(properties) = object else {
+                let Value::Object(properties) = &object else {
                     return Err(RuntimeError::new("property assignment requires an Object"));
                 };
 
-                write_collection(&properties, "property assignment")?.insert(name.clone(), value);
+                write_collection(properties, "property assignment")?.insert(name.clone(), value);
                 Ok(())
             }
 
@@ -902,7 +916,7 @@ impl Interpreter {
                 let object = self.evaluate(object)?;
                 let index = self.evaluate(index)?;
 
-                match object {
+                match &object {
                     Value::Module(_) => Err(RuntimeError::new("module namespace is read-only")),
                     Value::List(items) => {
                         if !crate::runtime::numeric::is_number(&index) {
@@ -912,7 +926,7 @@ impl Interpreter {
                             crate::runtime::numeric::index(&index, 1, usize::MAX).ok_or_else(
                                 || RuntimeError::new("list index must be a positive integer"),
                             )? - 1;
-                        let mut items = write_collection(&items, "list assignment")?;
+                        let mut items = write_collection(items, "list assignment")?;
 
                         if position >= items.len() {
                             return Err(RuntimeError::new(
@@ -925,11 +939,12 @@ impl Interpreter {
                     }
 
                     Value::Object(properties) => {
-                        let Value::String(key) = index else {
+                        let Value::String(key) = &index else {
                             return Err(RuntimeError::new("object index must be a string"));
                         };
 
-                        write_collection(&properties, "object assignment")?.insert(key, value);
+                        write_collection(properties, "object assignment")?
+                            .insert(key.clone(), value);
                         Ok(())
                     }
 
