@@ -166,7 +166,8 @@ foreach ($cancelCase in @(@{ Name = 'cancel-decline'; Input = "n`n" }, @{ Name =
 }
 $promptTarget = Join-Path $artifacts 'interactive'
 $prompt = Run-Logged 'interactive' @((Join-Path $bundle 'install.ps1'),'-InstallDirectory',$promptTarget,'-AddToPath','No','-NoColor','-CodeRoot',$CodeRoot) "n`ny`n"
-if ($prompt.Code -ne 0 -or $prompt.Output -notmatch 'Install Solx for Visual Studio Code\?' -or $prompt.Output -notmatch '\[Skipped\]') { throw "Interactive prompts failed: $($prompt.Output)" }
+if ($prompt.Code -ne 0 -or $prompt.Output -notmatch 'Install Solx for Visual Studio Code\?' -or
+    $prompt.Output -notmatch '\[Skipped\]' -or $prompt.Output -match 'Enter y or n') { throw "Interactive prompts failed: $($prompt.Output)" }
 Record 'interactive skip and confirmation' $true
 
 # Exercise upgrades through the extracted entrypoint, including prior metadata.

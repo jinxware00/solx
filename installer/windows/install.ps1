@@ -10,12 +10,21 @@ param(
     [string] $UserDataDirectory
 )
 $ErrorActionPreference = 'Stop'
+$redirectedInput = $null
 $useColor = -not ($NoColor -or $env:NO_COLOR -or $env:TERM -eq 'dumb' -or [Console]::IsOutputRedirected)
 function Say([string] $Text, [ConsoleColor] $Color = 'Gray') {
     if ($useColor) { Write-Host $Text -ForegroundColor $Color } else { Write-Host $Text }
 }
 function Ask([string] $Prompt, [string] $Default) {
-    if ([Console]::IsInputRedirected) { Write-Host "$Prompt [$Default]: " -NoNewline; $answer = [Console]::ReadLine() }
+    if ([Console]::IsInputRedirected) {
+        # Console.ReadLine treats a redirected UTF-8 preamble as answer text.
+        # Keep one BOM-aware reader so buffered answers survive across prompts.
+        if ($null -eq $script:redirectedInput) {
+            $script:redirectedInput = [IO.StreamReader]::new([Console]::OpenStandardInput(), [Console]::InputEncoding, $true)
+        }
+        Write-Host "$Prompt [$Default]: " -NoNewline
+        $answer = $script:redirectedInput.ReadLine()
+    }
     else { $answer = Read-Host "$Prompt [$Default]" }
     if ($null -eq $answer -or $answer -match '^(q|quit|cancel)$') { throw [OperationCanceledException]::new('Installation cancelled.') }
     if ($answer -eq '') { return $Default }
@@ -129,6 +138,7 @@ try {
     else { Say '  Solx was not installed. Any replaced files were restored; existing programs are preserved.' Yellow }
     exit 1
 } finally {
+    if ($null -ne $redirectedInput) { $redirectedInput.Dispose() }
     # PowerShell executes finally on Ctrl+C as well as normal cancellation.
     # Install-SolxFiles rolls back incomplete file replacement in its own finally.
     if (-not $finished -and -not $handled) {
