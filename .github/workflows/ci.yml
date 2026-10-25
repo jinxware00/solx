@@ -65,7 +65,9 @@ jobs:
       - name: Validate Windows resource guard
         if: runner.os == 'Windows'
         shell: powershell
-        run: ./scripts/test-guard.ps1
+        # -File reports the suite outcome; expected negative probes must not
+        # leak LASTEXITCODE into the Actions -Command wrapper.
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-guard.ps1
       - name: Test Rust
         run: cargo test --locked
       - name: Check Rust lints
