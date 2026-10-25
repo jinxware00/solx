@@ -18,7 +18,7 @@ validate these updated installer bytes.
 | CLI helper, quoting, timeout and inherited-pipe handling | 13 |
 | File/PATH transformations, checksums, identity and rollback | 7 |
 | Build inputs, identity, VSIX contents and provenance | 14 |
-| Release preparation, privacy and tampering rejection | 13 |
+| Release preparation, privacy and tampering rejection | 14 |
 | Extracted terminal installation/uninstallation | 18 |
 
 The terminal suite covers selected/skipped editor installation, CLI failures,

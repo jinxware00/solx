@@ -142,15 +142,23 @@ Assert-Release ($LASTEXITCODE -eq 0 -and $head -ceq $ExpectedCommit) 'Checkout H
 $tagCommit = & git -C $root rev-parse --verify ('refs/tags/' + $Tag + '^{commit}')
 Assert-Release ($LASTEXITCODE -eq 0 -and $tagCommit -ceq $ExpectedCommit) 'Release tag does not resolve to the expected commit.'
 $package = Get-Content -LiteralPath (Join-Path $root 'vscode-solx/package.json') -Raw | ConvertFrom-Json
-$lock = Get-Content -LiteralPath (Join-Path $root 'vscode-solx/package-lock.json') -Raw | ConvertFrom-Json
+$lockText = Get-Content -LiteralPath (Join-Path $root 'vscode-solx/package-lock.json') -Raw
+# npm lockfiles use an empty key for the root package. PowerShell 5 cannot
+# represent that key in a PSCustomObject, so deserialize to a dictionary.
+if ($PSVersionTable.PSVersion.Major -ge 6) {
+    $lock = ConvertFrom-Json -InputObject $lockText -AsHashtable
+} else {
+    Add-Type -AssemblyName System.Web.Extensions
+    $lock = (New-Object System.Web.Script.Serialization.JavaScriptSerializer).DeserializeObject($lockText)
+}
 $version = [regex]::Match((Get-Content -LiteralPath (Join-Path $root 'Cargo.toml') -Raw), '(?m)^version\s*=\s*"([^"]+)"').Groups[1].Value
 Assert-Release ($version -cmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -and $Tag -ceq "v$version") 'Tag must match the Cargo runtime version.'
 $cargoLock = [regex]::Matches((Get-Content -LiteralPath (Join-Path $root 'Cargo.lock') -Raw), '(?m)^name\s*=\s*"solx"\r?\nversion\s*=\s*"([^"]+)"')
 Assert-Release ($cargoLock.Count -eq 1 -and $cargoLock[0].Groups[1].Value -ceq $version) 'Cargo lockfile runtime version differs from source.'
 Assert-Release ($package.name -ceq 'solx-ls' -and $package.publisher -ceq 'jinxware00' -and
     $package.version -cmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -and $lock.name -ceq $package.name -and
-    $lock.version -ceq $package.version -and $lock.packages.''.name -ceq $package.name -and
-    $lock.packages.''.version -ceq $package.version) 'Extension release identity or lockfile differs from source.'
+    $lock.version -ceq $package.version -and $lock.packages[''].name -ceq $package.name -and
+    $lock.packages[''].version -ceq $package.version) 'Extension release identity or lockfile differs from source.'
 $files = Get-SolxExtensionFiles (Join-Path $root 'vscode-solx') $package
 $sources = Get-SolxBuildSources $root $files
 $checkedPaths = @($sources.Keys) + @('scripts/prepare-release.ps1', 'scripts/test-prepare-release.ps1', '.github/workflows/ci.yml', '.github/workflows/release.yml')

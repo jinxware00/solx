@@ -129,6 +129,14 @@ Check 'tag and expected commit must match the runtime and checkout' {
     Reject { & $helper -Tag v9.9.9 -ExpectedCommit $commit -VerifyOnly -AssetDirectory $prepared } 'Tag must match'
     Reject { & $helper -Tag v0.2.0 -ExpectedCommit ('a' * 40) -VerifyOnly -AssetDirectory $prepared } 'Checkout HEAD'
 }
+Check 'the empty-key lockfile root must match the extension version' {
+    $file = Join-Path $fixture 'vscode-solx/package-lock.json'
+    $before = [IO.File]::ReadAllBytes($file)
+    try {
+        Write-Text $file '{"name":"solx-ls","version":"0.1.0","lockfileVersion":3,"packages":{"":{"name":"solx-ls","version":"0.9.9"}}}'
+        Reject { Prepare } 'Extension release identity or lockfile differs'
+    } finally { [IO.File]::WriteAllBytes($file, $before) }
+}
 Check 'dirty packaged source is rejected before staging' {
     $file = Join-Path $fixture 'src/main.rs'
     $before = [IO.File]::ReadAllBytes($file)
