@@ -68,6 +68,14 @@ jobs:
         # -File reports the suite outcome; expected negative probes must not
         # leak LASTEXITCODE into the Actions -Command wrapper.
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-guard.ps1
+      - name: Test Windows installer validation and files
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          & ./installer/windows/test.ps1
+          & ./installer/windows/test-files.ps1
+          & ./installer/windows/test-build.ps1
+          & ./scripts/test-prepare-release.ps1
       - name: Test Rust
         run: cargo test --locked
       - name: Check Rust lints
@@ -92,14 +100,6 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: vscode-solx
         run: npm run test:package -- 1.143.1
-      - name: Test Windows installer validation and files
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: |
-          & ./installer/windows/test.ps1
-          & ./installer/windows/test-files.ps1
-          & ./installer/windows/test-build.ps1
-          & ./scripts/test-prepare-release.ps1
       - name: Build Windows bundle from validated source
         if: runner.os == 'Windows'
         shell: powershell

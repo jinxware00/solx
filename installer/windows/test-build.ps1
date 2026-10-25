@@ -224,6 +224,11 @@ Check 'packaging records complete payload hashes, toolchain and source hashes' {
     Equal $record.toolchain.rustc 'rustc fixture'
     Equal $record.packagedValidation.success $true
     Equal $record.sourceFiles.'vscode-solx/src/extension.cjs' (Get-FileHash -LiteralPath (Join-Path $f.Extension 'src/extension.cjs')).Hash
+    $zip = [IO.Compression.ZipFile]::OpenRead($archive)
+    try {
+        Equal ($zip.Entries.FullName -ccontains 'bin/solx.exe') $true
+        Equal @($zip.Entries | Where-Object { $_.FullName.Contains('\') }).Count 0
+    } finally { $zip.Dispose() }
     $unpacked = Join-Path $f.Root 'unpacked'
     Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
     $bundle = Get-Content -LiteralPath (Join-Path $unpacked 'bundle.json') -Raw | ConvertFrom-Json

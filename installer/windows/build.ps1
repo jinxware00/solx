@@ -166,7 +166,14 @@ function Invoke-SolxBuild {
     $archive = Join-Path $output "solx-$version-windows-x64.zip"
     $pending = Join-Path $output ('bundle-' + [guid]::NewGuid().ToString('N') + '.zip')
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [IO.Compression.ZipFile]::CreateFromDirectory($payload, $pending)
+    # .NET Framework's directory helper can emit Windows backslashes. ZIP
+    # entry names use forward slashes, matching the payload manifest.
+    $zip = [IO.Compression.ZipFile]::Open($pending, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($name in $payloadHashes.Keys) {
+            [void][IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, (Join-Path $payload $name), $name)
+        }
+    } finally { $zip.Dispose() }
     $head = $null; $runtimeDirty = $null; $extensionDirty = $null; $installerDirty = $null
     if (Test-Path -LiteralPath (Join-Path $Root '.git')) {
         $head = & git -C $Root rev-parse HEAD
