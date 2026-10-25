@@ -14,6 +14,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: '1'
+  RUST_TEST_THREADS: '1'
   RUST_TOOLCHAIN: '1.99.0'
 
 jobs:
@@ -43,6 +45,10 @@ jobs:
           cargo --version
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
+      - name: Validate Windows resource guard
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/test-guard.ps1
       - name: Test Rust
         run: cargo test --locked
       - name: Check Rust lints
@@ -70,12 +76,16 @@ jobs:
           & ./installer/windows/test.ps1
           & ./installer/windows/test-files.ps1
           & ./installer/windows/test-build.ps1
-      - name: Build and test isolated terminal installations
+      - name: Build Windows bundle from validated source
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./installer/windows/build.ps1
+      - name: Test extracted bundle and isolated terminal installations
         if: runner.os == 'Windows'
         shell: powershell
         run: |
           $codeRoot = Join-Path $PWD 'vscode-solx/.test-artifacts/vscode/vscode-win32-x64-archive-1.85.2'
-          & ./installer/windows/test-install.ps1 -CodeRoot $codeRoot
+          & ./installer/windows/test-install.ps1 -CodeRoot $codeRoot -SkipBuild
       - name: Retain Windows validation reports
         if: always() && runner.os == 'Windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

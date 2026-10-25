@@ -7,14 +7,17 @@ releases or install into a developer's normal Solx or VS Code directories.
 | Runner | Checks |
 | --- | --- |
 | Ubuntu 24.04, Windows 2022, macOS 14 | Rust formatting, locked Cargo tests, Clippy with warnings denied; extension unit tests, real interpreter integration tests, VSIX packaging |
-| Windows 2022 | Packaged VS Code 1.85.2 Extension Host checks; installer helper, file/PATH and build regression checks; eight isolated terminal installation/uninstallation cases |
+| Windows 2022 | Windows resource-guard probes; packaged VS Code 1.85.2 Extension Host checks; installer helper, file/PATH and build regression checks; 18 isolated terminal installation/uninstallation cases |
 
 The workflow pins Rust 1.99.0, uses Node.js 24, and installs extension dependencies
 with `npm ci`. The interpreter integration tests use Cargo offline after the
 Rust checks have fetched the locked dependencies. VS Code 1.85.2 is the supported
 baseline desktop build; the host harness downloads it into its test directory.
-The Windows terminal harness builds the release binary and uses separate install,
-extension and user-data directories with PATH changes disabled.
+The bundle build produces the release binary once, then the terminal harness
+uses `-SkipBuild` and separate install, extension and user-data directories with
+PATH changes disabled. Build jobs, Rust test threads and extension unit-test
+files run serially. The local Windows validation workflow also uses explicit
+process-tree memory/time caps; the hosted CI jobs have their own runner limits.
 
 Only official GitHub Actions are used. Their commit IDs were verified against
 the upstream tags with `git ls-remote`:

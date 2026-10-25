@@ -48,7 +48,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-files.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-build.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/build.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-install.ps1 -CodeRoot 'path\to\Microsoft VS Code'
+powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-install.ps1 -CodeRoot 'path\to\Microsoft VS Code' -SkipBuild
 ```
 
 The build checks the VSIX identity, the successful packaged-host receipt, and
@@ -65,10 +65,31 @@ See [CI and build validation](CI.md) for automated checks and their limits.
 
 `test.ps1` covers discovery and CLI argument/failure handling. `test-files.ps1`
 covers PATH edits, checksum validation, rollback, and backups. `test-install.ps1`
-extracts the ZIP and tests the actual terminal scripts: selected/skipped
-extension, missing VS Code/CLI, nonzero exit, interactive prompts/cancellation,
-and uninstall preserving modified files. It uses `-AddToPath No` and isolated
-VS Code data directories; normal installations are preserved.
+checks the archive hash, every extracted payload hash, source hashes, package
+versions and the packaged-host receipt before executing the bundle. It checks
+the installed CLI version and exact-integer/nil/JSON behavior, then exercises
+the actual terminal scripts: selected/skipped extension, missing VS Code/CLI,
+nonzero exit, interactive prompts and decline/quit/EOF cancellation, upgrades
+with backups, rollback after a real destination-file conflict, damaged bundles,
+and uninstall cancellation, unsafe metadata and preservation of user files.
+It writes results after every scenario and retains failure output. It uses
+`-AddToPath No` and isolated VS Code data directories; user PATH, the normal
+Solx executable, and normal editor settings/extension registration are checked
+for changes even after a failed scenario. Pass `-SkipBuild` to validate an
+existing current-source archive without recompiling it. The CI builds once
+and then uses this option for its extracted-bundle checks.
+Terminal scenarios have a 180-second process watchdog; interpreter version and
+semantic checks have 30-second watchdogs. Process cleanup also runs after an
+exception or interruption. Output-pipe draining is bounded. Run validation
+serially with an outer process-tree memory/time limit on resource-constrained
+hosts; the script watchdog alone is not a total host-memory bound.
+
+These tests exercise the complete ZIP and real interpreter/VS Code CLI, but
+the upgrade predecessor is a local fixture. They do not claim actual PATH
+registry/broadcast, VM reboot, locked-system-directory or forced-power-loss
+coverage. Those require a disposable Windows VM. See the current
+[installer validation record](../installer/windows/VALIDATION.md) for observed
+results and remaining checks.
 
 For a manual terminal check, extract the ZIP and run `install.ps1` with a
 temporary `-InstallDirectory` and `-AddToPath No`. Decline editor integration,

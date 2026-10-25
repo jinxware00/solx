@@ -12,14 +12,28 @@ $vsix = Join-Path $artifacts "extension space & apostrophe'.vsix"
 [IO.File]::WriteAllText($vsix, 'fixture')
 $source = @'
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 public class CliFixture {
     public static int Main(string[] args) {
+        if (args.Length == 1 && args[0] == "--hold-pipes") {
+            Thread.Sleep(10000);
+            return 0;
+        }
         File.WriteAllLines(Environment.GetEnvironmentVariable("SOLX_TEST_ARGUMENTS"), args);
         Console.WriteLine("fixture output");
         Console.Error.WriteLine("fixture error");
         if (Environment.GetEnvironmentVariable("ELECTRON_RUN_AS_NODE") != "1") return 99;
+        string pipeChild = Environment.GetEnvironmentVariable("SOLX_TEST_PIPE_CHILD");
+        if (!String.IsNullOrEmpty(pipeChild)) {
+            var info = new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName, "--hold-pipes");
+            info.UseShellExecute = false;
+            info.CreateNoWindow = true;
+            using (var child = Process.Start(info)) {
+                File.WriteAllLines(pipeChild, new[] { child.Id.ToString(), child.StartTime.ToUniversalTime().Ticks.ToString() });
+            }
+        }
         Thread.Sleep(int.Parse(Environment.GetEnvironmentVariable("SOLX_TEST_SLEEP") ?? "0"));
         return int.Parse(Environment.GetEnvironmentVariable("SOLX_TEST_EXIT") ?? "0");
     }
@@ -27,10 +41,11 @@ public class CliFixture {
 '@
 Add-Type -TypeDefinition $source -OutputAssembly (Join-Path $fake 'Code.exe') -OutputType ConsoleApplication
 $saved = @{}
-foreach ($name in @('SOLX_TEST_ARGUMENTS','SOLX_TEST_SLEEP','SOLX_TEST_EXIT')) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
+foreach ($name in @('SOLX_TEST_ARGUMENTS','SOLX_TEST_SLEEP','SOLX_TEST_EXIT','SOLX_TEST_PIPE_CHILD')) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
 $env:SOLX_TEST_ARGUMENTS = $record
 $env:SOLX_TEST_SLEEP = '0'
 $env:SOLX_TEST_EXIT = '0'
+$env:SOLX_TEST_PIPE_CHILD = ''
 $script:passed = @()
 function Check([string] $Name, [scriptblock] $Action) {
     & $Action
@@ -119,6 +134,35 @@ try {
             Equal $result.Status 'Failed'
             if ($result.Message -notmatch 'timed out') { throw 'Timeout not reported' }
         } finally { $env:SOLX_TEST_SLEEP = '0' }
+    }
+    Check 'inherited output pipes cannot outlive the CLI deadline' {
+        $childRecord = Join-Path $artifacts 'pipe-child.txt'
+        $env:SOLX_TEST_PIPE_CHILD = $childRecord
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        try {
+            $result = Run-Install -TimeoutSeconds 1
+            Equal $result.Status 'Failed'
+            if ($result.Message -notmatch 'timed out waiting for CLI output') { throw 'Output-drain timeout not reported' }
+            if ($timer.ElapsedMilliseconds -ge 5000) { throw 'Output-drain deadline was not enforced' }
+        } finally {
+            $env:SOLX_TEST_PIPE_CHILD = ''
+            # This fixture deliberately outlives its parent. Verify both PID and
+            # start time before terminating it; never select an editor by name.
+            if (Test-Path -LiteralPath $childRecord) {
+                $identity = [IO.File]::ReadAllLines($childRecord)
+                $owned = $null
+                try { $owned = [Diagnostics.Process]::GetProcessById([int]$identity[0]) }
+                catch [ArgumentException] { }
+                if ($owned) {
+                    try {
+                        if (-not $owned.HasExited -and $owned.StartTime.ToUniversalTime().Ticks -eq [long]$identity[1]) {
+                            $owned.Kill()
+                            if (-not $owned.WaitForExit(5000)) { throw 'Fixture child failed to exit' }
+                        }
+                    } finally { $owned.Dispose() }
+                }
+            }
+        }
     }
     Check 'Windows argument quoting round trips quotes and trailing slashes' {
         $values = @('', 'plain', 'spaces and & shell % characters', 'a"quoted"value', 'C:\trailing space\')

@@ -88,7 +88,7 @@ function Install-SolxVSCode {
         [string] $LogPath,
         [string] $ExtensionsDirectory,
         [string] $UserDataDirectory,
-        [int] $TimeoutSeconds = 120
+        [ValidateRange(1, 600)][int] $TimeoutSeconds = 120
     )
     if (-not $Selected) { return @{ Status = 'Skipped'; Message = 'VS Code extension skipped.' } }
     $manual = 'Solx remains installed. In VS Code, use Extensions: Install from VSIX and select ' + $Vsix + '. Restart VS Code after installation.'
@@ -120,12 +120,22 @@ function Install-SolxVSCode {
     try {
         if (-not $process.Start()) { throw 'VS Code CLI did not start.' }
         $started = $true
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $timeoutMilliseconds = $TimeoutSeconds * 1000
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        if (-not $process.WaitForExit($timeoutMilliseconds)) {
             # Terminate only this CLI's process tree, never an existing editor.
             Stop-SolxCLIProcess $process
             return @{ Status = 'Failed'; Message = 'VS Code extension installation timed out. ' + $manual }
+        }
+        # Descendants can inherit these pipes after the CLI parent exits. Keep
+        # output draining within the same deadline as process completion.
+        foreach ($reader in @($stdout, $stderr)) {
+            $remaining = [Math]::Max(0, $timeoutMilliseconds - [int]$timer.ElapsedMilliseconds)
+            if (-not $reader.Wait($remaining)) {
+                return @{ Status = 'Failed'; Message = 'VS Code extension installation timed out waiting for CLI output to close. ' + $manual }
+            }
         }
         $log = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
         if ($LogPath) { [IO.File]::WriteAllText($LogPath, $log) }
