@@ -1,6 +1,6 @@
 <img src="images/icon.png" alt="Solx" width="96" height="96">
 
-# Solx Language Support
+# Sol Language Support
 
 Write, check, and run `.solx` files in Visual Studio Code. Syntax highlighting,
 live diagnostics, Outline symbols, completions, construct snippets, and API documentation follow the existing
@@ -38,16 +38,19 @@ end
 ## Install locally
 
 Requires VS Code 1.85 or later. This extension has not been published to the
-Marketplace. Build or obtain `solx-language-support-0.4.0.vsix`, then use
+Marketplace. Download `solx-ls-0.1.0.vsix` from the
+[GitHub releases](https://github.com/jinxware00/solx/releases), then use
 **Extensions: Install from VSIX...**, or:
 
 ```sh
-code --install-extension solx-language-support-0.4.0.vsix
+code --install-extension solx-ls-0.1.0.vsix
 ```
 
-The extension identifier is `jinxware00.solx-language-support`. If you
-installed the older `solx` package, disable that copy to avoid duplicate
-language contributions. The language ID remains `solx`.
+The extension identifier is `jinxware00.solx-ls`. Version 0.1.0 begins this new
+package identity and retains the current editor features. If you installed
+the older `solx` or `jinxware00.solx-language-support` extension, uninstall that
+copy before installing Sol Language Support to avoid duplicate language providers. The
+language ID and settings prefix remain `solx`.
 
 The Windows terminal installer can bundle the extension. Its **Install Solx for Visual
 Studio Code** prompt defaults to yes when supported VS Code is found.

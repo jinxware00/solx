@@ -1,11 +1,12 @@
 # Installing Solx
 
-Solx is in early development. Packages currently require a local build from
-this repository; no Marketplace or GitHub release is claimed.
+Solx is in early development. Check [GitHub Releases](https://github.com/jinxware00/solx/releases)
+for packaged downloads, or build from this repository. The extension can be
+installed from its VSIX without a Marketplace listing.
 
 ## Windows terminal installer
 
-Build and extract `solx-0.2.0-windows-x64.zip`. Open PowerShell or Windows Terminal in
+Download or build and extract `solx-0.2.0-windows-x64.zip`. Open PowerShell or Windows Terminal in
 the extracted folder and run:
 
 ```powershell
@@ -31,20 +32,27 @@ The installer asks whether to add `bin` to your **user PATH** and whether to
 when desktop VS Code 1.85+ and its CLI are found. Decline to install only Solx.
 Missing or unsupported VS Code is explained and does not prevent installation.
 Standard per-user/system locations, App Paths, and absolute PATH entries for
-`code.cmd` are checked. Pass `-CodeRoot 'path\to\Microsoft VS Code'` for a
+`code.cmd` are checked. Pass an absolute path such as `-CodeRoot 'C:\Tools\Microsoft VS Code'` for a
 custom installation. Insiders, VSCodium, and remote extension hosts are not
 automatically detected.
 
-A current source build bundles Solx Language Support **0.4.0**, with no installation-time
-downloads. The VSIX is retained under `<installation folder>\editor` even if
+A current source build bundles Sol Language Support **0.1.0**, identified as
+`jinxware00.solx-ls`, with no installation-time downloads. The VSIX is retained
+under `<installation folder>\editor` even if
 skipped. If the CLI fails or times out, Solx stays installed and the terminal
 prints recovery instructions. Read `editor-install-result.txt` and, when
 produced, `vscode-install.log` in that folder. Install manually using
 **Extensions: Install from VSIX...** in VS Code, or:
 
 ```powershell
-code --install-extension 'path\to\solx-language-support-0.4.0.vsix'
+code --install-extension 'path\to\solx-ls-0.1.0.vsix'
 ```
+
+The extension was renamed from `jinxware00.solx-language-support` and starts at
+version 0.1.0 under its new identity. If the earlier extension is installed,
+disable or uninstall it in VS Code before enabling `jinxware00.solx-ls` to avoid
+duplicate diagnostics and commands. The installer leaves that separate extension
+in place. The interpreter remains version 0.2.0.
 
 Restart VS Code and open a new terminal after PATH changes:
 

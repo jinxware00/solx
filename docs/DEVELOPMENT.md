@@ -34,11 +34,9 @@ provide source previews. Output is kept in ignored `.test-artifacts` folders.
 
 ## Terminal installer
 
-The audit found only a manually installed `bin/solx.exe`, with no installer
-source or release workflow in the repository/history. `installer/windows`
-packages that existing Cargo executable and follows its per-user directory
-layout. Windows PowerShell supplies the terminal interface, file installation,
-and uninstall commands. No graphical installer framework is required.
+`installer/windows` packages the Cargo interpreter and validated VS Code
+extension into a per-user Windows installer. Windows PowerShell supplies the
+terminal interface, file installation, and uninstall commands.
 
 Build on Windows using Windows PowerShell 5.1 and the x64 MSVC Rust target.
 After the VSIX passes `test:package`, run from the repository root:
@@ -48,7 +46,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-files.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-build.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/build.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-install.ps1 -CodeRoot 'path\to\Microsoft VS Code' -SkipBuild
+powershell -NoProfile -ExecutionPolicy Bypass -File installer/windows/test-install.ps1 -CodeRoot 'C:\Path\Microsoft VS Code' -SkipBuild
 ```
 
 The build checks the VSIX identity, the successful packaged-host receipt, and
@@ -57,9 +55,11 @@ then creates `dist/solx-0.2.0-windows-x64.zip` plus a JSON provenance/hash recor
 contains the terminal scripts, executable, VSIX, official PNG, MIT license,
 installation guide, and checksums. Scripts download nothing. The standalone
 VSIX follows the extension version, currently
-`vscode-solx/solx-language-support-0.4.0.vsix`. Earlier ZIPs retain their older
+`vscode-solx/solx-ls-0.1.0.vsix`, with extension identity `jinxware00.solx-ls`.
+Its version is independent of the 0.2.0 interpreter version. Earlier ZIPs retain their older
 contents; rebuilding a standalone VSIX does not update them. The schema-v2
-provenance records source/payload hashes and tool versions. Replacing a bundle
+provenance records the validated extension name/publisher/version, source/payload
+hashes and tool versions. Replacing a bundle
 preserves its previous bytes and provenance under `dist/history` first.
 See [CI and build validation](CI.md) for automated checks and their limits.
 
@@ -102,5 +102,5 @@ before distribution: the provenance record flags uncommitted runtime changes.
 The ZIP hash checks corruption, not publisher authenticity. Signing scripts
 and a fresh Windows VM test of real PATH changes remain release checks.
 Verify Marketplace publisher ownership and availability of
-`jinxware00.solx-language-support` before manual publication. No publishing
+`jinxware00.solx-ls` before Marketplace publication. No publishing
 or account changes are performed by these scripts.

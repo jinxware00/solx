@@ -4,11 +4,11 @@ $artifacts = Join-Path $PSScriptRoot ('.artifacts/files-' + [guid]::NewGuid().To
 $bundle = Join-Path $artifacts 'bundle'
 New-Item -ItemType Directory -Force -Path (Join-Path $bundle 'bin'),(Join-Path $bundle 'editor') | Out-Null
 $files = [ordered]@{}
-foreach ($file in @('bin/solx.exe','editor/solx-language-support-0.2.1.vsix','LICENSE','INSTALLING.md','uninstall.ps1','Installer.psm1')) {
+foreach ($file in @('bin/solx.exe','editor/solx-ls-0.1.0.vsix','LICENSE','INSTALLING.md','uninstall.ps1','Installer.psm1')) {
     [IO.File]::WriteAllText((Join-Path $bundle $file), "fixture $file")
     $files[$file] = (Get-FileHash (Join-Path $bundle $file)).Hash
 }
-$manifest = @{ name = 'solx'; version = '0.1.0'; extensionVersion = '0.2.1'; files = $files }
+$manifest = @{ name = 'solx'; version = '0.2.0'; extensionName = 'solx-ls'; extensionPublisher = 'jinxware00'; extensionVersion = '0.1.0'; files = $files }
 $manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $bundle 'bundle.json')
 $script:passed = 0
 function Check([string] $Name, [scriptblock] $Action) { & $Action; $script:passed++; Write-Output "PASS $Name" }
@@ -30,7 +30,7 @@ Check 'PATH removal preserves unrelated entries exactly' {
 }
 Check 'bundle validation rejects damaged files before installation' {
     $valid = Get-SolxBundle $bundle
-    Equal $valid.version '0.1.0'
+    Equal $valid.version '0.2.0'
     $file = Join-Path $bundle 'LICENSE'
     $original = [IO.File]::ReadAllText($file)
     [IO.File]::WriteAllText($file, 'damaged')
@@ -46,6 +46,18 @@ Check 'unsafe bundle entries and installation paths are rejected' {
     Reject { Get-SolxInstallDirectory 'relative' } 'absolute'
     Reject { Get-SolxInstallDirectory 'C:\bad;path' } 'semicolons'
 }
+Check 'bundle identity rejects the legacy extension name and foreign publishers' {
+    foreach ($entry in @(@{ Field = 'extensionName'; Invalid = 'solx-language-support'; Valid = 'solx-ls' },
+                         @{ Field = 'extensionPublisher'; Invalid = 'other-publisher'; Valid = 'jinxware00' })) {
+        $manifest[$entry.Field] = $entry.Invalid
+        $manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $bundle 'bundle.json')
+        try { Reject { Get-SolxBundle $bundle } 'Invalid Solx bundle metadata' }
+        finally {
+            $manifest[$entry.Field] = $entry.Valid
+            $manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $bundle 'bundle.json')
+        }
+    }
+}
 Check 'failed replacement restores previous files and removes partial new files' {
     $target = Join-Path $artifacts 'rollback'
     New-Item -ItemType Directory -Force -Path (Join-Path $target 'bin') | Out-Null
@@ -56,7 +68,7 @@ Check 'failed replacement restores previous files and removes partial new files'
     Reject { Install-SolxFiles $bundle $target (Get-SolxBundle $bundle) -CopyFile $copy } 'simulated disk failure'
     Equal ([IO.File]::ReadAllText((Join-Path $target 'bin/solx.exe'))) 'original interpreter'
     Equal ([IO.File]::ReadAllText((Join-Path $target 'my.solx'))) 'user program'
-    Equal (Test-Path (Join-Path $target 'editor/solx-language-support-0.2.1.vsix')) $false
+    Equal (Test-Path (Join-Path $target 'editor/solx-ls-0.1.0.vsix')) $false
 }
 Check 'successful upgrade retains backups and user-created files' {
     $target = Join-Path $artifacts 'rollback'

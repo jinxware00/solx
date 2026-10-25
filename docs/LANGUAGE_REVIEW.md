@@ -13,7 +13,7 @@ declaration symbols. These changes do not establish performance or reliability
 superiority over Lua or Luau.
 
 The matching runtime, VSIX and installer have passed local Windows validation;
-see [the current record](OVERNIGHT_PROGRESS.md) for exact versions and receipts.
+see [the current record](VALIDATION.md) for exact versions and receipts.
 Historical results below describe the original try/catch milestone, not
 validation of every current feature or support on other operating systems.
 
@@ -118,7 +118,7 @@ unbounded APIs; they are not a fallback for bounded script execution. Runtime
 destruction is iterative, while evaluator/parser and function AST paths remain
 recursive. These changes do not establish a security sandbox or a hard memory
 or latency guarantee. Current integration results are recorded separately in
-[OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md).
+[VALIDATION.md](VALIDATION.md).
 
 ## Historical validation and change scope: try/catch milestone
 

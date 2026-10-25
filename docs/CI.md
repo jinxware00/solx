@@ -1,18 +1,21 @@
 # Continuous integration and release provenance
 
-[The CI workflow](../.github/workflows/ci.yml) runs on pushes, pull requests and
-manual dispatch. It has read-only repository permissions and does not publish
-releases or install into a developer's normal Solx or VS Code directories.
+[The CI workflow](../.github/workflows/ci.yml) runs on branch pushes, pull requests,
+manual dispatch, and calls from the [release workflow](../.github/workflows/release.yml).
+It has read-only repository permissions and does not publish releases or install
+into a developer's normal Solx or VS Code directories. Release calls pass the
+resolved tag commit explicitly; every matrix checkout uses that commit.
 
 | Runner | Checks |
 | --- | --- |
 | Ubuntu 24.04, Windows 2022, macOS 14 | Rust formatting, locked Cargo tests, Clippy with warnings denied; extension unit tests, real interpreter integration tests, VSIX packaging |
-| Windows 2022 | Windows resource-guard probes; packaged VS Code 1.85.2 Extension Host checks; installer helper, file/PATH and build regression checks; 18 isolated terminal installation/uninstallation cases |
+| Windows 2022 | Windows resource-guard probes; packaged VS Code 1.85.2 and 1.143.1 Extension Host checks; installer helper, file/PATH and build regression checks; release preparation fixtures; 18 isolated terminal installation/uninstallation cases |
 
 The workflow pins Rust 1.99.0, uses Node.js 24, and installs extension dependencies
 with `npm ci`. The interpreter integration tests use Cargo offline after the
 Rust checks have fetched the locked dependencies. VS Code 1.85.2 is the supported
-baseline desktop build; the host harness downloads it into its test directory.
+baseline desktop build; 1.143.1 provides additional desktop compatibility coverage.
+The host harness downloads both versions into its test directory.
 The bundle build produces the release binary once, then the terminal harness
 uses `-SkipBuild` and separate install, extension and user-data directories with
 PATH changes disabled. Build jobs, Rust test threads and extension unit-test
@@ -27,6 +30,7 @@ the upstream tags with `git ls-remote`:
 | `actions/checkout` | `v4.2.2` | `11bd71901bbe5b1630ceea73d27597364c9af683` |
 | `actions/setup-node` | `v4.4.0` | `49933ea5288caeca8642d1e84afbd3f7d6820020` |
 | `actions/upload-artifact` | `v4.6.2` | `ea165f8d65b6e75b540449e92b4886f43607fa02` |
+| `actions/download-artifact` (release only) | `v4.3.0` | `d3f86a106a0bac45b974a628896c90dbdf5c8093` |
 
 Windows validation reports are retained as workflow artifacts for 14 days,
 including failed host/installer logs when available. The ZIP and its provenance
@@ -35,6 +39,13 @@ artifacts, not a GitHub Release or Marketplace publication. Linux/macOS desktop
 Extension Host tests and real Windows user-PATH changes remain outside this
 workflow. Adding a workflow does not establish that a remote run has passed;
 consult the actual Actions run before claiming platform coverage.
+
+When called for a release, successful Windows validation additionally runs
+`scripts/prepare-release.ps1` and uploads exactly four sanitized public files as
+the `release-assets` artifact. The release workflow waits for every operating
+system in the matrix, then rechecks that artifact before publication. Publication
+is confined to a separate `contents: write` job. See [RELEASING.md](RELEASING.md)
+for tags, asset contents, local preparation, failure handling and limitations.
 
 ## Installer build validation
 

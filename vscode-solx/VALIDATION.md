@@ -1,3 +1,10 @@
+# Historical extension validation
+
+These reports describe the earlier `solx-language-support` packages. Current
+`solx-ls` 0.1.0 results and release requirements are in
+[HOST_VALIDATION.md](HOST_VALIDATION.md). Earlier artifact paths and claims below
+apply only to their recorded versions; old local VSIX downloads have been removed.
+
 # Solx Language Support validation
 
 ## 0.3.1 — Windows checker startup and snapshot cleanup

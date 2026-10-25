@@ -19,7 +19,7 @@ function New-Fixture {
     $root = Join-Path $artifacts ([guid]::NewGuid().ToString('N'))
     $extension = Join-Path $root 'vscode-solx'
     $source = [ordered]@{
-        'package.json' = '{"name":"solx-language-support","publisher":"jinxware00","version":"1.2.3","description":"original","files":["src/**","README.md","LICENSE","CHANGELOG.md","images/icon.png"]}'
+        'package.json' = '{"name":"solx-ls","publisher":"jinxware00","version":"1.2.3","description":"original","files":["src/**","README.md","LICENSE","CHANGELOG.md","images/icon.png"]}'
         'src/extension.cjs' = 'exports.activate = () => "original";'
         'src/nested/helper.cjs' = 'exports.helper = true;'
         'README.md' = 'Extension readme'
@@ -46,7 +46,7 @@ function New-Fixture {
         'extension/images/icon.png' = 'images/icon.png'
     }
     $fixture = [pscustomobject]@{ Root = $root; Extension = $extension; Entries = $entries; Vsix = ''; ReceiptPath = (Join-Path $root 'receipt.json');
-        Manifest = '<PackageManifest xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011"><Metadata><Identity Id="solx-language-support" Publisher="jinxware00" Version="1.2.3" /></Metadata></PackageManifest>' }
+        Manifest = '<PackageManifest xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011"><Metadata><Identity Id="solx-ls" Publisher="jinxware00" Version="1.2.3" /></Metadata></PackageManifest>' }
     Write-FixtureVsix $fixture
     return $fixture
 }
@@ -74,6 +74,14 @@ Check 'current package validates recursive code, binary assets, docs and manifes
     Equal $result.Package.version '1.2.3'
     Equal $result.Files.Count 7
     Equal $result.Sha256 (Get-FileHash -LiteralPath $f.Vsix).Hash
+}
+Check 'only the current extension name and publisher can be packaged' {
+    foreach ($replacement in @(@('solx-ls', 'solx-language-support'), @('jinxware00', 'other-publisher'))) {
+        $f = New-Fixture
+        $file = Join-Path $f.Extension 'package.json'
+        Write-Text $file ([IO.File]::ReadAllText($file).Replace($replacement[0], $replacement[1]))
+        Reject { Validate $f } 'Invalid extension package identity'
+    }
 }
 Check 'stale successful receipt cannot authorize modified source at the same version' {
     $f = New-Fixture
@@ -185,7 +193,7 @@ function New-BuildFixture {
     $f = New-Fixture
     Write-Text (Join-Path $f.Root 'Cargo.toml') 'version = "1.2.3"'
     foreach ($file in @('install.ps1', 'uninstall.ps1', 'Installer.psm1')) { Write-Text (Join-Path $f.Root "installer/windows/$file") "fixture $file" }
-    $vsix = Join-Path $f.Extension 'solx-language-support-1.2.3.vsix'
+    $vsix = Join-Path $f.Extension 'solx-ls-1.2.3.vsix'
     Copy-Item -LiteralPath $f.Vsix -Destination $vsix
     $receipt = Join-Path $f.Extension '.test-artifacts/package-validation.json'
     New-Item -ItemType Directory -Path (Split-Path -Parent $receipt) | Out-Null
@@ -209,6 +217,8 @@ Check 'packaging records complete payload hashes, toolchain and source hashes' {
     $archive = Join-Path $f.Root 'dist/solx-1.2.3-windows-x64.zip'
     $record = Get-Content -LiteralPath ($archive + '.json') -Raw | ConvertFrom-Json
     Equal $record.schemaVersion 2
+    Equal $record.extensionName 'solx-ls'
+    Equal $record.extensionPublisher 'jinxware00'
     Equal $record.sha256 (Get-FileHash -LiteralPath $archive).Hash
     Equal $record.vsixSha256 (Get-FileHash -LiteralPath $f.Vsix).Hash
     Equal $record.toolchain.rustc 'rustc fixture'
@@ -216,6 +226,9 @@ Check 'packaging records complete payload hashes, toolchain and source hashes' {
     Equal $record.sourceFiles.'vscode-solx/src/extension.cjs' (Get-FileHash -LiteralPath (Join-Path $f.Extension 'src/extension.cjs')).Hash
     $unpacked = Join-Path $f.Root 'unpacked'
     Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
+    $bundle = Get-Content -LiteralPath (Join-Path $unpacked 'bundle.json') -Raw | ConvertFrom-Json
+    Equal $bundle.extensionName $record.extensionName
+    Equal $bundle.extensionPublisher $record.extensionPublisher
     $payload = @(Get-ChildItem -LiteralPath $unpacked -Recurse -File)
     Equal $payload.Count @($record.payloadFiles.PSObject.Properties).Count
     foreach ($file in $payload) {

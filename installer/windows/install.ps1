@@ -100,7 +100,7 @@ try {
     } else { Say "  [-] PATH unchanged. Run Solx using $bin\solx.exe" DarkGray }
 
     Say '[5/5] Configure Visual Studio Code' Cyan
-    $vsix = Join-Path $InstallDirectory "editor/solx-language-support-$($manifest.extensionVersion).vsix"
+    $vsix = Join-Path $InstallDirectory "editor/$($manifest.extensionName)-$($manifest.extensionVersion).vsix"
     if ($editorSelected) { Say '  Installing bundled language support (up to 120 seconds)...' DarkGray }
     $editor = Install-SolxVSCode -Selected $editorSelected -CodeRoot $code -Vsix $vsix -LogPath (Join-Path $InstallDirectory 'vscode-install.log') -ExtensionsDirectory $ExtensionsDirectory -UserDataDirectory $UserDataDirectory
     [IO.File]::WriteAllText((Join-Path $InstallDirectory 'editor-install-result.txt'), $editor.Message)

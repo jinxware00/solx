@@ -107,7 +107,7 @@ handle and verifies that all weak function/module probes expire.
 The first complete post-fix `cargo test --locked --quiet` run passed 407 tests
 (including four independent semantic crosschecks). Strict all-target Clippy also
 passed. One additional cancellation regression was then added and is included in
-the integrated validation recorded in [OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md).
+the integrated validation recorded in [VALIDATION.md](VALIDATION.md).
 During test development, a fixture named `object` shadowed the standard-library
 module; renaming that local restored the intended removal check. The first
 cancellation fixture allowed a 100,000-node synchronous GC pass to consume its

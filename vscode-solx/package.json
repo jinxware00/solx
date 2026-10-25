@@ -1,8 +1,8 @@
 {
-  "name": "solx-language-support",
-  "displayName": "Solx Language Support",
+  "name": "solx-ls",
+  "displayName": "Sol Language Support",
   "description": "Syntax highlighting, diagnostics, Outline symbols, run commands, completions, and hover documentation for Solx.",
-  "version": "0.4.0",
+  "version": "0.1.0",
   "publisher": "jinxware00",
   "author": {
     "name": "jinxware00",

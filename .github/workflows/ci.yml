@@ -2,14 +2,29 @@ name: CI
 
 on:
   push:
+    branches: ['**']
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_commit:
+        description: Exact commit to validate for a release
+        type: string
+        default: ''
+      release_tag:
+        description: Existing runtime version tag for release preparation
+        type: string
+        default: ''
+      prepare_release:
+        description: Prepare verified public assets after all Windows checks
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ inputs.source_commit || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -31,6 +46,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          ref: ${{ inputs.source_commit || github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
@@ -69,6 +86,10 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: vscode-solx
         run: npm run test:package -- 1.85.2
+      - name: Test packaged extension in VS Code 1.143.1
+        if: runner.os == 'Windows'
+        working-directory: vscode-solx
+        run: npm run test:package -- 1.143.1
       - name: Test Windows installer validation and files
         if: runner.os == 'Windows'
         shell: powershell
@@ -76,6 +97,7 @@ jobs:
           & ./installer/windows/test.ps1
           & ./installer/windows/test-files.ps1
           & ./installer/windows/test-build.ps1
+          & ./scripts/test-prepare-release.ps1
       - name: Build Windows bundle from validated source
         if: runner.os == 'Windows'
         shell: powershell
@@ -86,6 +108,21 @@ jobs:
         run: |
           $codeRoot = Join-Path $PWD 'vscode-solx/.test-artifacts/vscode/vscode-win32-x64-archive-1.85.2'
           & ./installer/windows/test-install.ps1 -CodeRoot $codeRoot -SkipBuild
+      - name: Prepare verified public release assets
+        if: runner.os == 'Windows' && inputs.prepare_release
+        shell: powershell
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: ./scripts/prepare-release.ps1 -Tag $env:RELEASE_TAG -ExpectedCommit $env:SOURCE_COMMIT
+      - name: Retain public release assets
+        if: success() && runner.os == 'Windows' && inputs.prepare_release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-assets
+          if-no-files-found: error
+          retention-days: 14
+          path: dist/release-assets/*
       - name: Retain Windows validation reports
         if: always() && runner.os == 'Windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

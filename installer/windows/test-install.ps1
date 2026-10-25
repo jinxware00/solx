@@ -27,8 +27,12 @@ foreach ($file in $payload) {
     if ($record.payloadFiles.$relative -ne (Get-FileHash -LiteralPath $file.FullName).Hash) { throw "Extracted payload checksum mismatch: $relative" }
 }
 $manifest = Get-SolxBundle $bundle
-if ($manifest.version -ne $version -or $manifest.version -ne $record.interpreterVersion -or $manifest.extensionVersion -ne $record.extensionVersion) { throw 'Bundle versions do not match source and provenance.' }
-$vsix = Join-Path $bundle "editor/solx-language-support-$($manifest.extensionVersion).vsix"
+if ($manifest.version -ne $version -or $manifest.version -ne $record.interpreterVersion -or
+    $manifest.extensionName -cne $record.extensionName -or $manifest.extensionPublisher -cne $record.extensionPublisher -or
+    $manifest.extensionVersion -ne $record.extensionVersion) { throw 'Bundle identity and versions do not match source and provenance.' }
+$vsixName = "$($manifest.extensionName)-$($manifest.extensionVersion).vsix"
+$extensionId = "$($manifest.extensionPublisher).$($manifest.extensionName)"
+$vsix = Join-Path $bundle "editor/$vsixName"
 if ((Get-FileHash -LiteralPath $vsix).Hash -ne $record.vsixSha256 -or -not $record.packagedValidation.success -or
     $record.packagedValidation.sha256 -ne $record.vsixSha256) { throw 'Bundled VSIX does not match its successful host validation.' }
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -36,7 +40,7 @@ $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 # skipped build just as modified/deleted files do.
 . (Join-Path $PSScriptRoot 'build.ps1')
 $extensionDirectory = Join-Path $root 'vscode-solx'
-$currentVsix = Test-SolxVsix $extensionDirectory (Join-Path $extensionDirectory "solx-language-support-$($manifest.extensionVersion).vsix") (Join-Path $extensionDirectory '.test-artifacts/package-validation.json')
+$currentVsix = Test-SolxVsix $extensionDirectory (Join-Path $extensionDirectory $vsixName) (Join-Path $extensionDirectory '.test-artifacts/package-validation.json')
 $currentSources = Get-SolxBuildSources $root $currentVsix.Files
 if (($currentSources | ConvertTo-Json -Compress) -cne ($record.sourceFiles | ConvertTo-Json -Compress)) { throw 'Bundle was built from different source. Rebuild before testing.' }
 $originalPath = Get-SolxUserPath
@@ -148,8 +152,9 @@ foreach ($case in $cases) {
     $exe = Join-Path $destination 'bin/solx.exe'
     Assert-Interpreter $exe
     if ($case.Name -eq 'selected') {
-        $package = Get-Content (Join-Path $destination "test-extensions/jinxware00.solx-language-support-$($manifest.extensionVersion)/package.json") -Raw | ConvertFrom-Json
-        if ($package.version -ne $manifest.extensionVersion) { throw 'Installed extension version mismatch' }
+        $package = Get-Content (Join-Path $destination "test-extensions/$extensionId-$($manifest.extensionVersion)/package.json") -Raw | ConvertFrom-Json
+        if ($package.name -cne $manifest.extensionName -or $package.publisher -cne $manifest.extensionPublisher -or
+            $package.version -ne $manifest.extensionVersion) { throw 'Installed extension identity or version mismatch' }
     } elseif (Test-Path (Join-Path $destination 'test-extensions')) { throw 'Unexpected extension installation' }
     Record $case.Name $true
 }
@@ -195,7 +200,7 @@ $rollback = Run-Logged 'rollback' (Install-Arguments $rollbackTarget)
 if ($rollback.Code -ne 1 -or $rollback.Output -notmatch 'Cannot replace a directory' -or
     [IO.File]::ReadAllText((Join-Path $rollbackTarget 'bin/solx.exe')) -cne 'old interpreter' -or
     [IO.File]::ReadAllText((Join-Path $rollbackTarget 'LICENSE/keep.txt')) -cne 'unrelated data' -or
-    (Test-Path -LiteralPath (Join-Path $rollbackTarget "editor/solx-language-support-$($manifest.extensionVersion).vsix")) -or
+    (Test-Path -LiteralPath (Join-Path $rollbackTarget "editor/$vsixName")) -or
     (Test-Path -LiteralPath (Join-Path $rollbackTarget 'install-state.json'))) { throw "File rollback failed: $($rollback.Output)" }
 Record 'failed replacement restores old files and preserves unrelated directories' $true
 
@@ -236,7 +241,7 @@ if ($upgradeUninstall.Code -ne 0 -or (Test-Path -LiteralPath $oldExe) -or
 Record 'uninstall after upgrade preserves backups' $true
 
 $selectedTarget = Join-Path $artifacts 'selected space & path'
-$selectedPackage = Join-Path $selectedTarget "test-extensions/jinxware00.solx-language-support-$($manifest.extensionVersion)/package.json"
+$selectedPackage = Join-Path $selectedTarget "test-extensions/$extensionId-$($manifest.extensionVersion)/package.json"
 $selectedPackageHash = (Get-FileHash -LiteralPath $selectedPackage).Hash
 $selectedUninstall = Run-Logged 'selected-uninstall' @((Join-Path $selectedTarget 'uninstall.ps1'), '-Yes')
 if ($selectedUninstall.Code -ne 0 -or (Test-Path -LiteralPath (Join-Path $selectedTarget 'bin/solx.exe')) -or

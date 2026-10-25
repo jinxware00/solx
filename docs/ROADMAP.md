@@ -28,21 +28,21 @@ feature promise or a release announcement.
 - Byte/work budgets for language formatting, with cancellation and deadline
   checkpoints and complete-line validation before print output.
 - Deterministic generated-source tests and reproducible local benchmark tooling.
-- Extension 0.4.0 support for current runtime APIs, raw strings, iteration,
-  optional name diagnostics and Outline symbols. The matching VSIX passed 18
-  checks on both VS Code 1.85.2 and 1.143.1, including configuration refresh and
-  overlapping symbol requests; see the editor's HOST_VALIDATION.md.
+- Sol Language Support (`solx-ls` 0.1.0) includes current runtime APIs, raw
+  strings, iteration, optional name diagnostics and Outline symbols. See
+  [editor validation](../vscode-solx/HOST_VALIDATION.md) for tested versions.
 
 ## Validated local artifacts
 
-- The 0.4.0 VSIX passed 77 unit tests, 8 real-interpreter integrations and 18
-  packaged checks on each of VS Code 1.85.2 and 1.143.1.
-- The 0.2.0 Windows installer bundles that VSIX and the validated runtime. Its
-  final archive, built from committed inputs, passed all 18 isolated extracted
-  scenarios plus 32 helper/file/build checks. No normal installation was changed.
-- CI passes local lint and its Windows checks are validated; remote Linux/macOS
-  jobs have not run. Final hashes and exact receipts are in
-  [OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md). Earlier validation records
+- The renamed 0.1.0 VSIX passed 77 unit tests and 18 packaged checks on VS Code
+  1.85.2. The earlier extension identity passed 8 real-interpreter integrations
+  and 18 checks on VS Code 1.143.1; those are historical results.
+- The Windows installer now bundles `solx-ls` and records its identity in build
+  metadata. Fresh fixture and extracted-installation checks run in release CI.
+- Release CI requires all three operating systems and both Windows desktop
+  versions before publication. Adding this workflow does not establish a
+  successful remote run. Current evidence and limitations are in
+  [VALIDATION.md](VALIDATION.md). Earlier validation records
   apply only to the artifacts and sources they name.
 - Nine workloads now have a stable-runtime baseline against Lua and LuaJIT,
   plus explicit GC phase samples; see [BENCHMARKS.md](BENCHMARKS.md). Solx is

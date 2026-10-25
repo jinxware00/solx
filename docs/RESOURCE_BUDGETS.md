@@ -207,7 +207,7 @@ in watchdog subprocesses with small output. Renderer units compare unusual-key
 object ordering with host formatting and inject cancellation during long-prefix
 sorting; control units check deadline/cancellation handling independently of
 evaluation steps. These describe coverage, not a current pass count. Consult
-[OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md) for integrated results and exact
+[VALIDATION.md](VALIDATION.md) for integrated results and exact
 artifact receipts before accepting a package.
 
 ```sh

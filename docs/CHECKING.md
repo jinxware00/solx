@@ -99,9 +99,9 @@ their behavior.
 ## VS Code integration
 
 The extension checks the current buffer, including unsaved and untitled
-documents. Since version 0.3.1, Windows uses `check --json -- <snapshot>` with an owned
+documents. Windows uses `check --json -- <snapshot>` with an owned
 temporary file; other platforms use `check --json --stdin`. The configured
-executable must support schema v1. Version 0.4.0 source additionally supports
+executable must support schema v1. Sol Language Support (`solx-ls` 0.1.0) also supports
 `solx.diagnostics.checkNames` (default false) and Outline symbols through
 `solx.symbols.enabled`. Those features require the newer CLI flags; syntax-only
 checking remains the default. Cargo mode rebuilds the configured checkout
@@ -123,10 +123,11 @@ are in [the extension README](../vscode-solx/README.md). Name checks are optiona
 and conservative; neither mode is a type checker or execution sandbox. Outline
 symbols are declaration data, without rename/navigation or a debugger protocol.
 
-The matching runtime 0.2.0, extension 0.4.0 VSIX and installer have passed local
-Windows validation. Packaged checks passed on VS Code 1.85.2 and 1.143.1,
-including optional name diagnostics and Outline disable/re-enable without a
-document edit. See [the current record](OVERNIGHT_PROGRESS.md) for receipts.
+The runtime 0.2.0 and renamed `solx-ls` 0.1.0 VSIX have local Windows validation.
+The new VSIX passed all 18 packaged checks on VS Code 1.85.2, including optional
+name diagnostics and Outline disable/re-enable without a document edit.
+Fresh VS Code 1.143.1 and installer checks are required by release CI.
+See [the current record](VALIDATION.md) for receipts.
 Earlier package reports apply only to their recorded source versions. Rebuild
 the interpreter to use this CLI. No Marketplace publication or normal-profile
 installation is implied.

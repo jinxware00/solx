@@ -20,3 +20,11 @@ rustc-ice-*.txt
 
 # Local benchmark runs can include absolute machine paths.
 /benchmarks/results/
+
+# Local research, private session notes, generated extension packages and secrets.
+/experiments/
+/docs/OVERNIGHT_PROGRESS.md
+*.vsix
+.env
+.env.*
+!.env.example

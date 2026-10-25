@@ -37,7 +37,7 @@ host raw-Rc teardown, borrowed-container behavior, and cleanup after returns,
 errors, execution limits, and cancellation. The first integrated post-fix run
 passed 407 tests and strict Clippy; subsequent integrated receipts, including the
 additional cancellation test, are maintained in
-[OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md).
+[VALIDATION.md](VALIDATION.md).
 
 This closes the demonstrated runtime-value crash; it does not make destruction
 interruptible, bound heap allocation or GC pauses, or protect arbitrary manually

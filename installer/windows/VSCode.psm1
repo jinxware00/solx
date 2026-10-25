@@ -142,7 +142,7 @@ function Install-SolxVSCode {
         if ($process.ExitCode -ne 0) {
             return @{ Status = 'Failed'; Message = 'VS Code CLI exited with code ' + $process.ExitCode + '. See ' + $LogPath + '. ' + $manual }
         }
-        return @{ Status = 'Installed'; Message = 'Solx Language Support installed for VS Code. Restart VS Code to pick up the Solx PATH.' }
+        return @{ Status = 'Installed'; Message = 'Sol Language Support installed for VS Code. Restart VS Code to pick up the Solx PATH.' }
     } catch {
         if ($LogPath) { [IO.File]::WriteAllText($LogPath, $_.Exception.Message) }
         return @{ Status = 'Failed'; Message = 'Could not start or complete the VS Code CLI. See ' + $LogPath + '. ' + $manual }

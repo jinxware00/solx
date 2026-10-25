@@ -5,8 +5,11 @@ try {
     $directory = Get-SolxInstallDirectory $PSScriptRoot
     $state = Get-Content -LiteralPath (Join-Path $directory 'install-state.json') -Raw | ConvertFrom-Json
     if ($state.directory -ine $directory) { throw 'Installation metadata does not match this directory.' }
+    # Permit only current Solx payload names and its historical extension name.
+    # This preserves safe removal of metadata written before the rename.
+    $allowedFile = '^(bin/solx\.exe|editor/(solx-ls|solx-language-support)-\d+\.\d+\.\d+\.vsix|LICENSE|INSTALLING\.md|uninstall\.ps1|Installer\.psm1)$'
     foreach ($file in $state.files.PSObject.Properties) {
-        if ($file.Name -notmatch '^(bin/solx\.exe|editor/solx-language-support-\d+\.\d+\.\d+\.vsix|LICENSE|INSTALLING\.md|uninstall\.ps1|Installer\.psm1)$') { throw 'Unsafe installation metadata; refusing to remove files.' }
+        if ($file.Name -notmatch $allowedFile) { throw 'Unsafe installation metadata; refusing to remove files.' }
     }
     Write-Host "Solx / Uninstall from $directory"
     Write-Host 'Modified files, backups, your programs, and the VS Code extension will be preserved.'
@@ -17,7 +20,7 @@ try {
         Write-Host 'Removed the PATH entry added by this installer.'
     }
     foreach ($file in $state.files.PSObject.Properties) {
-        if ($file.Name -notmatch '^(bin/solx\.exe|editor/solx-language-support-\d+\.\d+\.\d+\.vsix|LICENSE|INSTALLING\.md|uninstall\.ps1|Installer\.psm1)$') { throw 'Unsafe installation metadata; refusing to remove files.' }
+        if ($file.Name -notmatch $allowedFile) { throw 'Unsafe installation metadata; refusing to remove files.' }
         $target = Join-Path $directory $file.Name
         [void](Get-SolxInstallDirectory (Split-Path -Parent $target))
         if (Test-Path -LiteralPath $target -PathType Leaf) {

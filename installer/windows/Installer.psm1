@@ -5,8 +5,9 @@ function Get-SolxBundle {
     param([string] $Directory)
     $manifest = Get-Content -LiteralPath (Join-Path $Directory 'bundle.json') -Raw | ConvertFrom-Json
     if ($manifest.name -ne 'solx' -or $manifest.version -notmatch '^\d+\.\d+\.\d+$' -or
+        $manifest.extensionName -cne 'solx-ls' -or $manifest.extensionPublisher -cne 'jinxware00' -or
         $manifest.extensionVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid Solx bundle metadata.' }
-    $expected = @('bin/solx.exe', "editor/solx-language-support-$($manifest.extensionVersion).vsix",
+    $expected = @('bin/solx.exe', "editor/$($manifest.extensionName)-$($manifest.extensionVersion).vsix",
         'LICENSE', 'INSTALLING.md', 'uninstall.ps1', 'Installer.psm1')
     $actual = @($manifest.files.PSObject.Properties.Name)
     if (@(Compare-Object $expected $actual).Count -ne 0) { throw 'Unexpected bundle file list.' }

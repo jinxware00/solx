@@ -161,7 +161,7 @@ and memory/latency profiling remain future work.
 
 These are the original Windows results, not current suite totals or validation
 of later deadlines, source limits, formatting, or iterative destruction.
-Current integration outcomes belong in [OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md).
+Current integration outcomes belong in [VALIDATION.md](VALIDATION.md).
 
 | Check | Result |
 | --- | --- |

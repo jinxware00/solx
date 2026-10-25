@@ -9,11 +9,14 @@ test('JSON resources, entry point, icon, and exact development dependencies are 
   const pkg = json('package.json');
   const lock = json('package-lock.json');
   for (const file of ['language-configuration.json', 'syntaxes/solx.tmLanguage.json', '.vscode/launch.json', 'data/snippets.json']) json(file);
-  assert.equal(pkg.name, 'solx-language-support');
+  assert.equal(pkg.name, 'solx-ls');
+  assert.equal(pkg.displayName, 'Sol Language Support');
   assert.equal(pkg.publisher, 'jinxware00');
   assert.equal(pkg.author.url, 'https://github.com/jinxware00');
   assert.equal(lock.name, pkg.name);
   assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages[''].name, pkg.name);
+  assert.equal(lock.packages[''].version, pkg.version);
   assert.deepEqual(lock.packages[''].devDependencies, pkg.devDependencies);
   assert.ok(Object.values(pkg.devDependencies).every(version => /^\d+\.\d+\.\d+$/.test(version)));
   assert.equal(pkg.dependencies, undefined);
@@ -37,6 +40,6 @@ test('README uses real local images and names only implemented features', () => 
     assert.ok(!/^https?:/.test(asset));
     assert.ok(fs.existsSync(path.join(root, asset)), asset);
   }
-  assert.ok(readme.includes(`solx-language-support-${json('package.json').version}.vsix`));
+  assert.ok(readme.includes(`${json('package.json').name}-${json('package.json').version}.vsix`));
   assert.match(readme, /parse-only/);
 });

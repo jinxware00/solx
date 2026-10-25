@@ -44,7 +44,7 @@ function Get-SolxExtensionFiles {
 function Test-SolxVsix {
     param([string] $Directory, [string] $Vsix, [string] $ReceiptPath)
     $package = Get-Content -LiteralPath (Join-Path $Directory 'package.json') -Raw | ConvertFrom-Json
-    if ($package.name -cne 'solx-language-support' -or $package.publisher -cne 'jinxware00' -or
+    if ($package.name -cne 'solx-ls' -or $package.publisher -cne 'jinxware00' -or
         $package.version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid extension package identity.' }
     if (-not (Test-Path -LiteralPath $Vsix -PathType Leaf) -or -not (Test-Path -LiteralPath $ReceiptPath -PathType Leaf)) {
         throw 'Build the VSIX and run npm run test:package before building the installer.'
@@ -150,7 +150,8 @@ function Invoke-SolxBuild {
     Copy-Item -LiteralPath (Join-Path $Root 'assets/logo.png') -Destination $payload
     $files = [ordered]@{}
     foreach ($file in @('bin/solx.exe', "editor/$vsixName", 'LICENSE', 'INSTALLING.md', 'uninstall.ps1', 'Installer.psm1')) { $files[$file] = (Get-FileHash -LiteralPath (Join-Path $payload $file)).Hash }
-    [ordered]@{ name = 'solx'; version = $version; extensionVersion = $package.version; files = $files } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $payload 'bundle.json') -Encoding UTF8
+    [ordered]@{ name = 'solx'; version = $version; extensionName = $package.name; extensionPublisher = $package.publisher;
+        extensionVersion = $package.version; files = $files } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $payload 'bundle.json') -Encoding UTF8
 
     # Do not label an artifact with a snapshot that changed while Cargo or copying ran.
     $current = Test-SolxVsix $extension $vsix $receiptPath
@@ -182,7 +183,8 @@ function Invoke-SolxBuild {
         $toolchain[$tool] = (& $tool --version | Out-String).Trim()
         if ($LASTEXITCODE -ne 0) { throw "Cannot read $tool version." }
     }
-    [ordered]@{ schemaVersion = 2; interpreterVersion = $version; extensionVersion = $package.version; sourceCommit = $head;
+    [ordered]@{ schemaVersion = 2; interpreterVersion = $version; extensionName = $package.name; extensionPublisher = $package.publisher;
+        extensionVersion = $package.version; sourceCommit = $head;
         runtimeHasLocalChanges = $runtimeDirty; extensionHasLocalChanges = $extensionDirty; installerHasLocalChanges = $installerDirty;
         target = 'x86_64-pc-windows-msvc'; builtAtUtc = [DateTime]::UtcNow.ToString('o'); toolchain = $toolchain;
         buildEnvironment = @{ RUSTFLAGS = $env:RUSTFLAGS; CARGO_ENCODED_RUSTFLAGS = $env:CARGO_ENCODED_RUSTFLAGS; SOURCE_DATE_EPOCH = $env:SOURCE_DATE_EPOCH };

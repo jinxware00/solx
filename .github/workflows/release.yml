@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing runtime version tag, for example v0.2.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve immutable tagged source
+    runs-on: windows-2022
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+      tag: ${{ steps.source.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Resolve tag
+        id: source
+        shell: powershell
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RELEASE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected an existing vMAJOR.MINOR.PATCH tag.' }
+          $commit = & git rev-parse --verify ('refs/tags/' + $env:RELEASE_TAG + '^{commit}')
+          if ($LASTEXITCODE -ne 0 -or $commit -cnotmatch '^[0-9a-f]{40}$') { throw 'Cannot resolve the requested tag to a commit.' }
+          @("commit=$commit", "tag=$($env:RELEASE_TAG)") | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+  validate:
+    name: Validate and package tagged source
+    needs: resolve
+    uses: ./.github/workflows/ci.yml
+    with:
+      source_commit: ${{ needs.resolve.outputs.commit }}
+      release_tag: ${{ needs.resolve.outputs.tag }}
+      prepare_release: true
+
+  publish:
+    name: Publish tested release assets
+    needs: [resolve, validate]
+    runs-on: windows-2022
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          ref: ${{ needs.resolve.outputs.commit }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-assets
+          path: dist/release-assets
+      - name: Recheck downloaded assets against tagged source
+        shell: powershell
+        env:
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+          SOURCE_COMMIT: ${{ needs.resolve.outputs.commit }}
+        run: ./scripts/prepare-release.ps1 -Tag $env:RELEASE_TAG -ExpectedCommit $env:SOURCE_COMMIT -VerifyOnly
+      - name: Create and publish release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+          SOURCE_COMMIT: ${{ needs.resolve.outputs.commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $remoteCommit = & gh api "repos/$env:GITHUB_REPOSITORY/commits/$env:RELEASE_TAG" --jq .sha
+          if ($LASTEXITCODE -ne 0 -or $remoteCommit -cne $env:SOURCE_COMMIT) { throw 'The remote tag moved after validation.' }
+          $package = Get-Content -LiteralPath vscode-solx/package.json -Raw | ConvertFrom-Json
+          $version = $env:RELEASE_TAG.Substring(1)
+          $archive = "solx-$version-windows-x64.zip"
+          $assets = @("dist/release-assets/$($package.name)-$($package.version).vsix", "dist/release-assets/$archive", "dist/release-assets/$archive.json", 'dist/release-assets/SHA256SUMS')
+          $notes = @(
+            "Solx runtime $version with $($package.displayName) $($package.version) ($($package.publisher).$($package.name)).",
+            '',
+            'The Windows archive includes the interpreter, terminal installer, and VS Code extension. The separate VSIX installs through VS Code Install from VSIX.',
+            '',
+            "Installation: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/blob/$env:RELEASE_TAG/docs/INSTALLING.md",
+            '',
+            "Source commit: $env:SOURCE_COMMIT. SHA256SUMS verifies all three downloadable payloads; the JSON records sanitized build provenance."
+          )
+          [IO.File]::WriteAllText((Join-Path $PWD 'release-notes.md'), ($notes -join "`n"), (New-Object Text.UTF8Encoding $false))
+          & gh release create $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --verify-tag --target $env:SOURCE_COMMIT --draft --title "Solx $env:RELEASE_TAG" --notes-file release-notes.md @assets
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation/upload failed; inspect any retained draft before retrying.' }
+          & gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false
+          if ($LASTEXITCODE -ne 0) { throw 'Assets were uploaded to a draft, but publishing failed.' }
