@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/jinxware00/solx/main/assets/logowtext.svg" alt="Solx Programming Language" width="400">
+  <img src="https://raw.githubusercontent.com/jinxware00/solx/main/assets/logowtext.svg" alt="Solx Programming Language" width="120">
 </div>
 
 This is the source code repository for Solx. It contains the compiler,
