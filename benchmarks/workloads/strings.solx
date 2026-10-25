@@ -1,0 +1,7 @@
+import "string"
+var checksum = 0
+for i = 1, 4000 do
+    var text = string.upper("solx") .. str(i % 10) .. "-runtime"
+    checksum = checksum + string.len(text)
+end
+print(checksum)

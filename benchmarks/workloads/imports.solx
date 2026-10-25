@@ -1,0 +1,6 @@
+var sum = 0
+for i = 1, 5000 do
+    import "./import_target.solx" as data
+    sum = sum + data.next(i)
+end
+print(sum)

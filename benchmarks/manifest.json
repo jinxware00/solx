@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "description": "Fixed bounded workloads. LuaJIT uses Lua fixtures; Luau has an explicit variant where module-loading rules differ. Each selected runtime must pass every checksum.",
+  "cases": [
+    { "name": "startup", "kind": "startup-baseline", "iterations": 0, "expectedStdout": "ready", "solx": "workloads/startup.solx", "lua": "workloads/startup.lua" },
+    { "name": "arithmetic", "kind": "end-to-end", "iterations": 50000, "expectedStdout": "2400012", "solx": "workloads/arithmetic.solx", "lua": "workloads/arithmetic.lua" },
+    { "name": "calls", "kind": "end-to-end", "iterations": 20000, "expectedStdout": "600050000", "solx": "workloads/calls.solx", "lua": "workloads/calls.lua" },
+    { "name": "strings", "kind": "end-to-end", "iterations": 4000, "expectedStdout": "52000", "solx": "workloads/strings.solx", "lua": "workloads/strings.lua" },
+    { "name": "collections", "kind": "end-to-end", "iterations": 5000, "expectedStdout": "243887", "solx": "workloads/collections.solx", "lua": "workloads/collections.lua" },
+    { "name": "closures", "kind": "end-to-end", "iterations": 10000, "expectedStdout": "50005000", "solx": "workloads/closures.solx", "lua": "workloads/closures.lua" },
+    { "name": "control", "kind": "end-to-end", "iterations": 20000, "expectedStdout": "100000000", "solx": "workloads/control.solx", "lua": "workloads/control.lua" },
+    { "name": "allocation", "kind": "end-to-end", "iterations": 10000, "expectedStdout": "50015000", "solx": "workloads/allocation.solx", "lua": "workloads/allocation.lua" },
+    { "name": "imports", "kind": "end-to-end", "iterations": 5000, "expectedStdout": "12507500", "solx": "workloads/imports.solx", "lua": "workloads/imports.lua", "luau": "workloads/imports.luau", "support": ["workloads/import_target.solx", "workloads/import_target.lua"] }
+  ]
+}

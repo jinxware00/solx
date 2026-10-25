@@ -1,0 +1,7 @@
+var i = 0
+var sum = 0
+while i < 20000 do
+    i = i + 1
+    if i % 2 == 1 then sum = sum + i end
+end
+print(sum)

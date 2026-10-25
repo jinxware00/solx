@@ -17,3 +17,6 @@ rustc-ice-*.txt
 # Local installer bundles, build payloads, and validation output
 /dist/
 /installer/windows/.artifacts/
+
+# Local benchmark runs can include absolute machine paths.
+/benchmarks/results/
