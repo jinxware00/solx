@@ -15,6 +15,21 @@ before(() => {
 });
 const execute = source => cp.spawnSync(binary, ['-e', source], { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
 
+test('file I/O example and documented capability flags work with the real CLI', () => {
+  const directory = fs.mkdtempSync(path.join(fixture, 'host-libraries-'));
+  const example = path.join(root, '../examples/file_io.solx');
+  const denied = cp.spawnSync(binary, ['--fs-root', directory, '--', example], { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
+  assert.equal(denied.status, 1);
+  assert.match(denied.stderr, /permission/);
+  assert.deepEqual(fs.readdirSync(directory), []);
+  const allowed = cp.spawnSync(binary, ['--allow-read', '--allow-write', '--allow-time', '--fs-root', directory, '--', example], { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.match(allowed.stdout, /Saved\tsolx-example.json\tfor\tSolx/);
+  const record = JSON.parse(fs.readFileSync(path.join(directory, 'solx-example.json'), 'utf8'));
+  assert.equal(record.language, 'Solx');
+  assert.ok(Number.isSafeInteger(record.created_ms));
+});
+
 test('verified CLI options and original example execute successfully', () => {
   const help = cp.spawnSync(binary, ['--help'], { encoding: 'utf8', windowsHide: true });
   assert.equal(help.status, 0);

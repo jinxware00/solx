@@ -56,6 +56,17 @@ cargo run --locked -- examples/functions.solx
 Run `cargo run --locked` to start the interactive console from source. CI checks
 the runtime on Windows, Linux, and macOS; the packaged installer targets Windows x64.
 
+## Standard library
+
+The current source has **9 built-in modules with 57 functions**: `core`, `math`,
+`string`, `list`, `object`, `json`, `fs`, `path`, and `time`. It also provides
+the global functions `print`, `str`, and `num`.
+
+The new `fs`, `path`, and `time` modules complete the first file-I/O milestone.
+They require a current source build and are not in the v0.2.0 downloads above.
+File access uses an explicitly granted directory, separate read/write flags,
+and bounded operations. See [the APIs and file-I/O example](docs/HOST_LIBRARIES.md).
+
 ## Visual Studio Code
 
 **Sol Language Support** provides syntax highlighting, completions, hover,

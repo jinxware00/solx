@@ -899,9 +899,11 @@ other types, invalid strings, nonfinite numbers and out-of-range integer
 strings error. All three remain global, first-class, and shadowable.
 There are no duplicate namespaced conversion aliases.
 
-The interpreter implements the six native modules below and the file
-imports in section 13. JSON and try/catch are implemented. Randomness,
-filesystem/process utilities and pcall remain deferred.
+The current source implements the nine native modules below (57 functions),
+plus the three global functions above and the file imports in section 13.
+The `fs`, `path`, and `time` modules are additions after the published v0.2.0
+release. JSON and try/catch are implemented. Randomness, network/process
+utilities and pcall remain deferred.
 Run `cargo run -- examples/modules/main.solx`
 for a two-file example that combines native APIs and a pure Solx utility.
 
@@ -945,6 +947,13 @@ left to right, before validation, following ordinary calls.
 | `object` | `keys(object)` | A new List of keys sorted lexicographically for deterministic output. |
 | `object` | `has(object, key)` | Boolean; key must be String. A property holding nil still exists. |
 | `object` | `remove(object, key)` | Removes and returns the property, or nil when absent, without warning. |
+| `fs` | `read_text(path)` | Read a regular UTF-8 file, at most 1 MiB. Requires a read grant. |
+| `fs` | `write_text(path, text)`, `append_text(path, text)` | Create/truncate or append a String, at most 1 MiB per call. Requires a write grant; returns nil. |
+| `fs` | `exists(path)`, `is_file(path)`, `is_dir(path)` | Read-granted target queries; false for missing targets, errors for other I/O failures. |
+| `fs` | `read_dir(path)` | Read-granted sorted immediate entry names; at most 4096 entries and 1 MiB of UTF-8 names. |
+| `fs` | `create_dir(path)`, `remove_file(path)`, `remove_dir(path)`, `rename(from, to)` | Write-granted operations within one root; return nil. Directory creation/removal is nonrecursive. |
+| `path` | `join(base, child)`, `basename(value)`, `dirname(value)`, `extension(value)`, `stem(value)`, `is_absolute(value)` | Pure native-platform path operations. No file access; 4096-byte String limits. Missing components return nil. |
+| `time` | `unix_ms()`, `elapsed_ms()` | Exact integer milliseconds from the Unix epoch or since the clock grant began. Requires a clock grant. |
 
 Lengths and indexes are Numbers. Collection helpers mutate shared
 collections even when held by a constant, matching existing property and
@@ -968,6 +977,23 @@ empty-input and mutation rules are in [COLLECTION_APIS.md](COLLECTION_APIS.md).
 Random generation is deferred until seeding, reproducibility, generator
 state isolation, and cryptographic/noncryptographic API boundaries are
 specified. No implicit clock-seeded global generator is introduced.
+
+### 14.3 Host access
+
+Native file and clock access is denied by default. `--allow-read` and
+`--allow-write` independently grant `fs` access relative to `--fs-root DIR`
+(default current directory); `--allow-time` grants clock access. The root is
+opened once and paths resolve through a directory capability, including symlink
+confinement. `fs` rejects absolute paths, `..` components, empty paths, colons,
+NUL, and paths over 4096 UTF-8 bytes. This does not restrict existing entry-file
+or module source loading and is not a whole-interpreter sandbox.
+
+Permission, I/O and per-call bound errors are catchable. File handles close on
+all exits, but writes can leave partial effects after a failure or cancellation.
+I/O chunks and directory entries share steps, cancellation and deadlines; OS
+calls remain cooperative rather than preemptible. Complete behavior, platform
+path rules, grant replacement and Rust embedding are in
+[HOST_LIBRARIES.md](HOST_LIBRARIES.md).
 
 ## 15. Programming paradigms
 

@@ -7,6 +7,7 @@ use std::{
 };
 
 use solx::{
+    host::HostCapabilities,
     interpreter::Interpreter,
     lexer::{TokenKind, tokenize},
     limits::{
@@ -34,6 +35,22 @@ struct Cli {
     /// Enter interactive mode after executing code or a file
     #[arg(short = 'i', long = "interactive")]
     interactive: bool,
+
+    /// Allow fs reads and directory queries inside --fs-root
+    #[arg(long)]
+    allow_read: bool,
+
+    /// Allow fs writes, creation, rename, and removal inside --fs-root
+    #[arg(long)]
+    allow_write: bool,
+
+    /// Root for fs operations (default: current directory); grants no access alone
+    #[arg(long, value_name = "DIR")]
+    fs_root: Option<PathBuf>,
+
+    /// Allow time.unix_ms() and time.elapsed_ms()
+    #[arg(long)]
+    allow_time: bool,
 
     /// Maximum evaluation steps per file, -e command, or REPL buffer
     #[arg(long, value_name = "N", default_value_t = DEFAULT_MAX_STEPS)]
@@ -240,6 +257,22 @@ fn run(cli: Cli) -> Result<(), String> {
         ..ExecutionLimits::default()
     })
     .map_err(|error| error.to_string())?;
+    let mut capabilities = HostCapabilities::default();
+    if cli.allow_read || cli.allow_write {
+        capabilities = capabilities
+            .with_filesystem(
+                cli.fs_root
+                    .as_deref()
+                    .unwrap_or_else(|| std::path::Path::new(".")),
+                cli.allow_read,
+                cli.allow_write,
+            )
+            .map_err(|error| format!("cannot open filesystem root: {error}"))?;
+    }
+    if cli.allow_time {
+        capabilities = capabilities.with_time();
+    }
+    interpreter.set_capabilities(capabilities);
     let cancellation = interpreter.cancellation_token();
     ctrlc::set_handler(move || cancellation.cancel())
         .map_err(|error| format!("cannot install Ctrl+C handler: {error}"))?;

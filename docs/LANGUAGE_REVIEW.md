@@ -4,7 +4,9 @@ Solx is not feature-complete. The current implementation supports lexical
 variables, binding constants and runtime variable annotations, functions and
 closures, numeric/collection/while loops, separate lists and objects, explicit
 cached modules, and a standard library with bounded JSON, string utilities and
-callback collection operations. Structured runtime errors, automatic cycle
+callback collection operations. Current source also adds bounded file I/O,
+pure path helpers and explicitly granted clocks; see [HOST_LIBRARIES.md](HOST_LIBRARIES.md).
+Structured runtime errors, automatic cycle
 collection, iterative runtime graph destruction, raw multiline strings, exact
 integers and storable nil are implemented. [Execution controls](RESOURCE_BUDGETS.md)
 include optional deadlines, source limits, and language formatting byte/work
@@ -103,7 +105,7 @@ arithmetic; see [NIL_MIGRATION.md](NIL_MIGRATION.md) and [NUMBERS.md](NUMBERS.md
 | 3 | Extend the settled Number and nil foundations | Exact i64 integers, checked arithmetic, exact mixed comparisons, and storable nil are implemented. Optional/union annotations and multiple-result rules remain open; retain explicit migration notes for further compatibility changes. |
 | 4 | Better errors and editor checking | Syntax checks, optional conservative name analysis and declaration symbols are implemented; see [CHECKING.md](CHECKING.md). Next add expression ranges, error categories/causes, structured rethrow, stronger name/signature analysis and navigation. Existing variable annotations check at runtime. |
 | 5 | Build on practical iteration and library APIs | List/object snapshot iteration and map/filter/fold/custom sorting are implemented with explicit mutation, callback-failure and budget rules. Expand APIs only with concrete use cases; see [ITERATION.md](ITERATION.md) and [COLLECTION_APIS.md](COLLECTION_APIS.md). |
-| 6 | Resource handling and I/O | Design deterministic cleanup (`defer`/resource scopes) alongside explicit file/OS capabilities. Define cleanup failures and cancellation before adding filesystem/network/process APIs. Lua's closing mechanism is a useful reference; arbitrary ambient access is not required for Solx. |
+| 6 | Resource handling and I/O | Bounded whole-file operations now close handles on all exits and use explicit directory/read/write grants. Streaming handles, deterministic user resource scopes, networking and process capabilities remain. Writes can leave partial effects on failure or cancellation; see [HOST_LIBRARIES.md](HOST_LIBRARIES.md). |
 | 7 | Strings, results, and packages | Raw multiline strings, literal replacement and scalar/byte conversions are implemented. Specify interpolation escaping and multiple results; add grapheme operations if needed. A bounded local manifest/entry validator can begin the proposed package tooling without downloads or execution hooks. |
 
 Coroutines/async, metaprogramming, classes, and a JIT require concrete use

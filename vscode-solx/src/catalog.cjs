@@ -6,6 +6,31 @@ const builtins = {
   num: entry('num(value)', 'Accepts one Number or a trimmed numeric String. Integer forms preserve signed 64-bit values; decimal/exponent forms use finite binary64. Invalid strings, overflow, nonfinite values and other types raise an error.'),
 };
 const modules = {
+  fs: {
+    read_text: entry('fs.read_text(path)', 'Reads a regular UTF-8 file, at most 1 MiB, relative to --fs-root (default current directory). Requires --allow-read. Root escapes and invalid encoding raise errors. Available in current source after v0.2.0.'),
+    write_text: entry('fs.write_text(path, text)', 'Creates or truncates a regular file under --fs-root and writes a String of at most 1 MiB. Requires --allow-write. Returns nil; I/O failure or cancellation can leave partial effects.'),
+    append_text: entry('fs.append_text(path, text)', 'Appends a String of at most 1 MiB to a regular file under --fs-root, creating it if absent. Requires --allow-write. Returns nil; repeated appends can exceed 1 MiB.'),
+    exists: entry('fs.exists(path)', 'Tests for a target under --fs-root, following symlinks within the root. Requires --allow-read. Missing targets return false; other I/O errors propagate.'),
+    is_file: entry('fs.is_file(path)', 'Tests whether a target under --fs-root is a regular file. Requires --allow-read. Missing targets return false.'),
+    is_dir: entry('fs.is_dir(path)', 'Tests whether a target under --fs-root is a directory. Requires --allow-read. Missing targets return false.'),
+    read_dir: entry('fs.read_dir(path)', 'Returns sorted immediate entry names under --fs-root. Requires --allow-read. Limited to 4096 entries and 1 MiB of UTF-8 filename bytes; invalid filename encoding raises an error.'),
+    create_dir: entry('fs.create_dir(path)', 'Creates one directory under --fs-root. Requires --allow-write and an existing parent. Existing targets raise an error. Returns nil.'),
+    remove_file: entry('fs.remove_file(path)', 'Removes one file or file symlink under --fs-root. Requires --allow-write. Missing targets raise an error. Returns nil.'),
+    remove_dir: entry('fs.remove_dir(path)', 'Removes one empty directory under --fs-root. Requires --allow-write. Missing or nonempty directories raise an error. Returns nil.'),
+    rename: entry('fs.rename(from, to)', 'Renames within --fs-root. Requires --allow-write. Existing-target replacement follows host OS rules. Returns nil.'),
+  },
+  path: {
+    join: entry('path.join(base, child)', 'Joins two Strings using native path rules; an absolute child replaces the base. No file access or confinement check. Inputs and output are limited to 4096 UTF-8 bytes. Available in current source after v0.2.0.'),
+    basename: entry('path.basename(value)', 'Returns the final normal path component, or nil for paths such as roots and parent components. Uses native rules without file access.'),
+    dirname: entry('path.dirname(value)', 'Returns the parent path String, or nil when absent. A bare filename has the empty String as its parent. No file access.'),
+    extension: entry('path.extension(value)', 'Returns the final extension without a dot, or nil. A leading-dot filename has no extension; a trailing dot has an empty extension. No file access.'),
+    stem: entry('path.stem(value)', 'Returns the basename with its final extension removed, or nil if there is no basename. No file access.'),
+    is_absolute: entry('path.is_absolute(value)', 'Tests whether a path is absolute using host OS rules. No file access; a Windows drive-relative path is not absolute.'),
+  },
+  time: {
+    unix_ms: entry('time.unix_ms()', 'Returns exact integer milliseconds since the Unix epoch. Requires --allow-time. Wall time may move backwards when the OS adjusts it. Available in current source after v0.2.0.'),
+    elapsed_ms: entry('time.elapsed_ms()', 'Returns nondecreasing exact integer milliseconds since this interpreter enabled its clock grant. Requires --allow-time; persists across REPL runs. Use differences to measure work.'),
+  },
   json: {
     parse: entry('json.parse(text)', 'Parses one JSON String. Null becomes nil; integer tokens retain signed 64-bit precision. Rejects invalid JSON and unsafe numbers. Limited to 1 MiB UTF-8 and 64 container levels.'),
     stringify: entry('json.stringify(value)', 'Returns compact JSON with sorted object keys. Preserves nil as null. Rejects cycles, functions/modules, nonfinite numbers and unavailable borrows. Limited to 1 MiB UTF-8 and 64 container levels.'),

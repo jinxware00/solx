@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.2.0 — unreleased
+## Unreleased
+
+- Add `fs`, `path`, and `time`: 19 functions, bringing the standard library to
+  nine modules and 57 functions plus `print`, `str`, and `num`.
+- Complete the first file-I/O milestone with directory capabilities, separate
+  read/write grants, bounded UTF-8 operations and directory listings, and
+  cooperative run-budget checks. Clock grants are independent and per host.
+- Add CLI flags, Rust embedding support, editor completions/hover/highlighting,
+  a practical JSON file example and [host API documentation](docs/HOST_LIBRARIES.md).
+
+## 0.2.0 — 2026-10-25
 
 - Collection `for ... in` loops snapshot entries, use deterministic object-key
   ordering and preserve fresh bindings for closures. `in` is now reserved.
@@ -15,7 +25,7 @@
   shallow snapshots and share execution limits, scopes and error handling.
 - Opt-in `check --names` performs conservative AST name analysis; independent
   `check --symbols --json` returns exact declaration ranges. Default checks
-  remain syntax-only. Extension 0.4.0 source adds opt-in name diagnostics and
+  remain syntax-only. Sol Language Support 0.1.0 includes opt-in name diagnostics and
   Outline symbols.
 - Cross-platform CI definition, installer source/VSIX content validation,
   expanded provenance and preservation of earlier archives.
@@ -33,6 +43,7 @@
 - Existing structured errors, cycle collection, execution limits, cancellation,
   and non-executing syntax checking are included in this source version.
 
-This is a source development version. Matching VSIX and installer validation is
-pending; older local artifact reports do not validate these new source changes.
-There is no claim of a published release or an updated normal installation.
+Published as the [v0.2.0 development release](https://github.com/jinxware00/solx/releases/tag/v0.2.0)
+with Sol Language Support 0.1.0 and the Windows installer. Hosted validation
+covered Windows, Linux, macOS and both supported Windows VS Code test versions.
+See [VALIDATION.md](docs/VALIDATION.md) for the release evidence.

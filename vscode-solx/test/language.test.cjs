@@ -5,6 +5,18 @@ const complete = source => completions(source, source.length);
 const labels = source => complete(source).map(item => item.label);
 const at = (source, needle) => hover(source, source.lastIndexOf(needle));
 
+test('filesystem, path and clock APIs require imports and retain permission guidance', () => {
+  assert.deepEqual(labels('fs.'), []);
+  assert.deepEqual(labels('import "fs" as files\nfiles.read_'), ['read_text', 'read_dir']);
+  assert.deepEqual(labels('import "path" as p\np.base'), ['basename']);
+  assert.deepEqual(labels('import "time"\ntime.'), ['unix_ms', 'elapsed_ms']);
+  assert.deepEqual(labels('import "fs"\nvar fs = {}\nfs.'), []);
+  assert.match(at('import "fs"\nfs.read_text("data")', 'read_text').description, /--allow-read/);
+  assert.match(at('import "fs"\nfs.write_text("data", "x")', 'write_text').description, /--allow-write/);
+  assert.match(at('import "time" as clock\nclock.unix_ms()', 'unix_ms').description, /--allow-time/);
+  assert.match(at('import "path"\npath.join("a", "b")', 'join').description, /native path rules/);
+});
+
 test('scanner keeps raw multiline content in a single UTF-16 string token', () => {
   const source = 'var text = """first\r\n😀 {name} \\q -- print\r\nlast""" next';
   const tokens = scan(source);

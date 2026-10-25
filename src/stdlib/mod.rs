@@ -2,9 +2,12 @@
 
 mod collections;
 mod core;
+mod fs;
 mod json;
 mod math;
+mod path;
 mod strings;
+mod time;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -228,11 +231,14 @@ pub(crate) fn call(
 pub(crate) fn module(name: &str) -> Option<Value> {
     let functions = match name {
         "core" => core::FUNCTIONS,
+        "fs" => fs::FUNCTIONS,
         "json" => json::FUNCTIONS,
         "math" => math::FUNCTIONS,
         "string" => strings::FUNCTIONS,
         "list" => collections::LIST_FUNCTIONS,
         "object" => collections::OBJECT_FUNCTIONS,
+        "path" => path::FUNCTIONS,
+        "time" => time::FUNCTIONS,
         _ => return None,
     };
     let mut exports: HashMap<_, _> = functions

@@ -199,15 +199,10 @@ test('built-in calls, standard APIs, aliases, and ordinary members', () => {
     expectScope(tokenize(`${name}(value)`)[0], name, 'support.function.builtin.solx');
     expectScope(tokenize(`player.${name}(value)`)[0], name, 'entity.name.function.call.solx');
   }
-  const modules = {
-    core: ['type', 'assert', 'error'],
-    math: ['abs', 'sqrt', 'floor', 'ceil', 'round', 'min', 'max'],
-    string: ['len', 'upper', 'lower', 'trim', 'slice', 'find', 'split', 'join', 'starts_with', 'ends_with'],
-    list: ['len', 'append', 'remove', 'find', 'sort'],
-    object: ['keys', 'has', 'remove'],
-  };
-  for (const [module, names] of Object.entries(modules)) {
-    for (const name of names) {
+  const { modules } = require('../src/catalog.cjs');
+  for (const [module, members] of Object.entries(modules)) {
+    for (const [name, entry] of Object.entries(members)) {
+      if (entry.kind !== 'Function') continue;
       const line = tokenize(`${module} . ${name}(value)`)[0];
       expectScope(line, module, 'support.module.solx');
       expectScope(line, name, 'support.function.solx');

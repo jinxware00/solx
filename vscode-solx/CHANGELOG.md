@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Completion and hover for `fs`, `path`, and `time`, including CLI permission
+  guidance. Requires the corresponding runtime source after v0.2.0.
+- Standard-library highlighting now covers all catalog functions, including
+  JSON and previously added string and callback collection helpers.
+- Real-interpreter integration checks for file I/O and explicit grants.
+
 ## 0.1.0
 
 Initial release of **Sol Language Support** under `jinxware00.solx-ls`,

@@ -18,7 +18,7 @@ live diagnostics, Outline symbols, completions, construct snippets, and API docu
 - **Snippets** for named/anonymous functions, conditionals, numeric/collection/while
   loops, `try`/`catch`, imports, and variable declarations. Trigger suggestions with Ctrl+Space.
 - **Hover documentation** for recognized built-ins and the `core`, `math`,
-  `string`, `list`, `object`, and `json` APIs, including signatures and constraints.
+  `string`, `list`, `object`, `json`, `fs`, `path`, and `time` APIs, including signatures and constraints.
 - **Syntax highlighting**, `--` line comments, bracket matching, and automatic
   bracket/quote closing and surrounding.
 
@@ -36,6 +36,14 @@ end
 ```
 
 ## Install locally
+
+Current source adds editor support for `fs`, `path`, and `time`. These APIs and
+their editor additions are not in the v0.2.0 / extension 0.1.0 release downloads.
+Use matching current sources. File and clock programs need explicit CLI grants;
+run them from the terminal, for example
+`solx --allow-read --allow-write --allow-time --fs-root . program.solx`.
+The Run command uses default grants. See
+[host libraries](https://github.com/jinxware00/solx/blob/main/docs/HOST_LIBRARIES.md).
 
 Requires VS Code 1.85 or later. This extension has not been published to the
 Marketplace. Download `solx-ls-0.1.0.vsix` from the

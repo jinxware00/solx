@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod check;
+pub mod host;
 pub mod interpreter;
 pub mod lexer;
 pub mod limits;

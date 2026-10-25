@@ -114,7 +114,7 @@
           }
         },
         {
-          "match": "\\b(string)([ \\t]*)(\\.)([ \\t]*)(len|upper|lower|trim|slice|find|split|join|starts_with|ends_with)\\b",
+          "match": "\\b(string)([ \\t]*)(\\.)([ \\t]*)(len|byte_len|codepoints|from_codepoints|replace|upper|lower|trim|slice|find|split|join|starts_with|ends_with)\\b",
           "captures": {
             "1": { "name": "support.module.solx" },
             "3": { "name": "punctuation.accessor.solx" },
@@ -122,7 +122,7 @@
           }
         },
         {
-          "match": "\\b(list)([ \\t]*)(\\.)([ \\t]*)(len|append|remove|find|sort)\\b",
+          "match": "\\b(list)([ \\t]*)(\\.)([ \\t]*)(len|append|remove|find|sort|map|filter|fold|sorted)\\b",
           "captures": {
             "1": { "name": "support.module.solx" },
             "3": { "name": "punctuation.accessor.solx" },
@@ -131,6 +131,38 @@
         },
         {
           "match": "\\b(object)([ \\t]*)(\\.)([ \\t]*)(keys|has|remove)\\b",
+          "captures": {
+            "1": { "name": "support.module.solx" },
+            "3": { "name": "punctuation.accessor.solx" },
+            "5": { "name": "support.function.solx" }
+          }
+        },
+        {
+          "match": "\\b(fs)([ \\t]*)(\\.)([ \\t]*)(read_text|write_text|append_text|exists|is_file|is_dir|read_dir|create_dir|remove_file|remove_dir|rename)\\b",
+          "captures": {
+            "1": { "name": "support.module.solx" },
+            "3": { "name": "punctuation.accessor.solx" },
+            "5": { "name": "support.function.solx" }
+          }
+        },
+        {
+          "match": "\\b(path)([ \\t]*)(\\.)([ \\t]*)(join|basename|dirname|extension|stem|is_absolute)\\b",
+          "captures": {
+            "1": { "name": "support.module.solx" },
+            "3": { "name": "punctuation.accessor.solx" },
+            "5": { "name": "support.function.solx" }
+          }
+        },
+        {
+          "match": "\\b(time)([ \\t]*)(\\.)([ \\t]*)(unix_ms|elapsed_ms)\\b",
+          "captures": {
+            "1": { "name": "support.module.solx" },
+            "3": { "name": "punctuation.accessor.solx" },
+            "5": { "name": "support.function.solx" }
+          }
+        },
+        {
+          "match": "\\b(json)([ \\t]*)(\\.)([ \\t]*)(parse|stringify)\\b",
           "captures": {
             "1": { "name": "support.module.solx" },
             "3": { "name": "punctuation.accessor.solx" },

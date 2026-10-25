@@ -4,6 +4,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use super::control::Control;
+use crate::host::HostCapabilities;
 use crate::limits::{CancellationToken, ExecutionLimits, LimitKind};
 use crate::modules::{ModuleId, ModuleLoader};
 use crate::parser::ast::{BinaryOp, DeclarationKind, Expr, Function, Program, Stmt, UnaryOp};
@@ -28,6 +29,7 @@ pub struct Interpreter {
     modules: ModuleLoader,
     current_location: Option<SourceLocation>,
     pub(super) control: Control,
+    pub(crate) host: HostCapabilities,
 }
 
 impl Default for Interpreter {
@@ -58,11 +60,22 @@ impl Interpreter {
             modules: ModuleLoader::default(),
             current_location: None,
             control: Control::new(limits),
+            host: HostCapabilities::default(),
         })
     }
 
     pub fn limits(&self) -> ExecutionLimits {
         self.control.limits
+    }
+
+    /// Replace native I/O grants. Cached module functions consult the current
+    /// grants at call time, so replacing this also revokes previous access.
+    pub fn set_capabilities(&mut self, capabilities: HostCapabilities) {
+        self.host = capabilities;
+    }
+
+    pub(crate) fn native_checkpoint(&mut self) -> Result<(), RuntimeError> {
+        self.control.step()
     }
 
     pub(crate) fn format_values(

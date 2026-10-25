@@ -6,6 +6,11 @@ feature promise or a release announcement.
 
 ## Completed source milestones
 
+- First file-I/O milestone: `fs`, `path`, and `time` modules with independent
+  host read/write/clock grants, a directory capability root, bounded UTF-8
+  operations, deterministic listings, CLI flags and editor API support.
+  See [HOST_LIBRARIES.md](HOST_LIBRARIES.md); these additions are after v0.2.0.
+
 - Windows extension checker startup workaround and normal-shutdown cleanup
   (extension 0.3.1, locally packaged and desktop tested).
 - CI for Windows, Linux and macOS, plus installer source/VSIX consistency,
@@ -58,8 +63,9 @@ feature promise or a release announcement.
 - Broader name/signature analysis, expression ranges, multiple error recovery,
   structured error causes/rethrow and deterministic resource cleanup.
 - Function/return/optional annotations and explicit multiple-result rules.
-- Capability-based file/path/environment/argument/time APIs and isolated seeded
-  randomness; networking/process access needs a clear host access policy.
+- Environment/argument APIs and isolated seeded randomness; networking/process
+  access needs a clear host access policy. File/path/time APIs are implemented;
+  streaming file handles and deterministic user-level resource scopes remain.
 - Language-server features, navigation/rename/signature help,
   comment-preserving formatting, indentation/folding, and a debugger.
 - Persistent checker transport and investigation of the Windows stdin stall;

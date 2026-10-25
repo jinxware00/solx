@@ -1,0 +1,16 @@
+-- Current source build: solx --allow-read --allow-write --allow-time --fs-root . examples/file_io.solx
+-- Creates or replaces solx-example.json inside the selected root.
+import "fs"
+import "path"
+import "time"
+import "json"
+
+var started = time.elapsed_ms()
+var filename = path.join(".", "solx-example.json")
+var record = { language = "Solx", created_ms = time.unix_ms() }
+fs.write_text(filename, json.stringify(record))
+
+var loaded = json.parse(fs.read_text(filename))
+print("Saved", path.basename(filename), "for", loaded.language)
+print("Files in the selected directory:", fs.read_dir("."))
+print("Elapsed milliseconds:", time.elapsed_ms() - started)
