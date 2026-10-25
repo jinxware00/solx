@@ -22,9 +22,36 @@ exports.run = async function () {
     await vscode.window.showTextDocument(document);
     return document;
   };
-  const configure = async (key, value) => vscode.workspace.getConfiguration('solx').update(key, value, vscode.ConfigurationTarget.Workspace);
+  const configure = async (key, value) => {
+    const scope = vscode.workspace.workspaceFolders[0].uri;
+    const configuration = vscode.workspace.getConfiguration('solx', scope);
+    if (configuration.get(key) === value) return;
+    let subscription, timeout, rejectChange;
+    const changed = new Promise((resolve, reject) => {
+      rejectChange = reject;
+      subscription = vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration(`solx.${key}`, scope)
+          && vscode.workspace.getConfiguration('solx', scope).get(key) === value) resolve();
+      });
+    });
+    try {
+      await configuration.update(key, value, vscode.ConfigurationTarget.Workspace);
+      // File saves and save participants belong to update(); start the event
+      // delivery deadline only after that operation actually finishes.
+      timeout = setTimeout(() => rejectChange(new Error(`Configuration event missing for solx.${key}`)), 5000);
+      await changed;
+    }
+    finally { clearTimeout(timeout); subscription.dispose(); }
+  };
   const complete = (doc, offset) => vscode.commands.executeCommand('vscode.executeCompletionItemProvider', doc.uri, doc.positionAt(offset));
   const hovers = (doc, offset) => vscode.commands.executeCommand('vscode.executeHoverProvider', doc.uri, doc.positionAt(offset));
+  const documentSymbols = async doc => {
+    const result = await vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider', doc.uri);
+    // VS Code 1.85's command adapter returns undefined for an empty symbol
+    // array, including when a registered provider deliberately returns [].
+    assert.ok(result === undefined || Array.isArray(result), 'Unexpected document symbol result');
+    return result ?? [];
+  };
   const label = item => typeof item.label === 'string' ? item.label : item.label.label;
   // VS Code also returns its own word-based Text suggestions. The Solx
   // provider contributes typed Keyword/Function/Module/Snippet items only.
@@ -138,6 +165,51 @@ exports.run = async function () {
       const result = await vscode.commands.executeCommand('solx.runCurrentFile');
       assert.equal(result.status, 'failed');
       assert.equal(result.code, 1);
+    });
+    await check('Outline uses real parser declaration names and source selections', async () => {
+      const source = 'var text="😀"\r\nimport "math" as m\r\nfn greet(name) return name end\r\n';
+      const outlined = await open('outline.solx', source);
+      const version = outlined.version;
+      const symbols = await documentSymbols(outlined);
+      assert.deepEqual(symbols.map(item => item.name), ['text', 'm', 'greet']);
+      assert.deepEqual(symbols.map(item => outlined.getText(item.selectionRange)), ['text', 'm', 'greet']);
+      assert.equal(symbols[2].kind, vscode.SymbolKind.Function);
+      await configure('symbols.enabled', false);
+      let disabled;
+      const deadline = Date.now() + 5000;
+      do {
+        disabled = await documentSymbols(outlined);
+        if (disabled.length === 0) break;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } while (Date.now() < deadline);
+      assert.equal(disabled.length, 0);
+      assert.deepEqual(await documentSymbols(outlined), []);
+      await configure('symbols.enabled', true);
+      let restored;
+      const restoredDeadline = Date.now() + 35000;
+      do {
+        restored = await documentSymbols(outlined);
+        if (restored.length) break;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } while (Date.now() < restoredDeadline);
+      assert.deepEqual(restored.map(item => item.name), ['text', 'm', 'greet']);
+      assert.deepEqual(restored.map(item => outlined.getText(item.selectionRange)), ['text', 'm', 'greet']);
+      assert.equal(outlined.version, version, 'Configuration refresh must not edit the document');
+    });
+    await check('optional undefined-name diagnostics are real, ranged, and disabled by default', async () => {
+      const checked = await open('name checks.solx', 'var text="😀"\r\nprint(missing)');
+      assert.equal((await vscode.commands.executeCommand('solx.checkCurrentFile')).diagnostics, 0);
+      await configure('diagnostics.checkNames', true);
+      assert.equal((await vscode.commands.executeCommand('solx.checkCurrentFile')).diagnostics, 1);
+      const [diagnostic] = vscode.languages.getDiagnostics(checked.uri).filter(item => item.source === 'Solx');
+      assert.equal(diagnostic.code, 'undefined-name');
+      assert.equal(checked.getText(diagnostic.range), 'missing');
+      await configure('diagnostics.checkNames', false);
+    });
+    await check('raw multiline strings suppress Solx completion and hover', async () => {
+      const raw = await open('raw strings.solx', 'var text="""first\nprint\nlast"""');
+      assert.equal(solxItems(await complete(raw, raw.getText().indexOf('print') + 3)).length, 0);
+      assert.equal((await hovers(raw, raw.getText().indexOf('print') + 1)).length, 0);
     });
     await check('missing interpreter is handled in the actual host', async () => {
       await configure('cargoManifestPath', '');

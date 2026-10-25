@@ -5,6 +5,55 @@ const complete = source => completions(source, source.length);
 const labels = source => complete(source).map(item => item.label);
 const at = (source, needle) => hover(source, source.lastIndexOf(needle));
 
+test('scanner keeps raw multiline content in a single UTF-16 string token', () => {
+  const source = 'var text = """first\r\n😀 {name} \\q -- print\r\nlast""" next';
+  const tokens = scan(source);
+  const string = tokens.find(token => token.kind === 'string');
+  assert.equal(tokens.filter(token => token.kind === 'string').length, 1);
+  assert.equal(string.text, '"""first\r\n😀 {name} \\q -- print\r\nlast"""');
+  assert.equal(string.closed, true);
+  assert.equal(string.start, 11);
+  assert.equal(string.end, source.indexOf(' next'));
+  assert.equal(tokens.at(-1).text, 'next');
+});
+
+test('raw strings suppress completion and hover across lines and through incomplete delimiters', () => {
+  for (const source of [
+    'var text = """\nprint',
+    'import "math"\nvar text = """line\nmath.sq',
+    'var text = """\n-- comment\nprint',
+    'var text = """open ""',
+  ]) {
+    assert.deepEqual(completions(source, source.length), []);
+    assert.equal(hover(source, source.lastIndexOf('print')), undefined);
+    assert.equal(scan(source).at(-1).closed, false);
+  }
+  const source = 'var text = """\nprint\n"""';
+  assert.deepEqual(completions(source, source.indexOf('print') + 3), []);
+  assert.equal(hover(source, source.indexOf('print')), undefined);
+});
+
+test('raw scanner closes at the first triple quote without escape processing', () => {
+  assert.deepEqual(labels('var text = """ends\\"""\npri'), ['print']);
+  assert.deepEqual(labels('var text = """"""\npri'), ['print']);
+  const tokens = scan('"""x"""""');
+  assert.equal(tokens[0].text, '"""x"""');
+  assert.equal(tokens[1].text, '""');
+  assert.ok(tokens.every(token => token.closed));
+  assert.equal(scan('"""""""').at(-1).closed, false);
+});
+
+test('raw imports infer exact module names and aliases without trimming or unescaping', () => {
+  assert.deepEqual(labels('import """math"""\nmath.sq'), ['sqrt']);
+  assert.deepEqual(labels('import """math""" as m\nm.sq'), ['sqrt']);
+  assert.match(at('import """math""" as m\nm.sqrt(4)', 'sqrt').signature, /sqrt/);
+  assert.deepEqual(labels('import """json""" as data\ndata.'), ['parse', 'stringify']);
+  assert.deepEqual(labels('import """math""" '), ['as']);
+  assert.deepEqual(labels('import """\nmath\n""" as m\nm.'), []);
+  assert.deepEqual(labels('import """math\\""" as m\nm.'), []);
+  assert.deepEqual(labels('import """./math.solx""" as m\nm.'), []);
+  assert.deepEqual(labels('var text = """import "math"\n"""\nmath.'), []);
+});
 test('confirmed keywords, built-ins, and valid construct snippets', () => {
   const items = complete('');
   for (const name of ['var', 'fn', 'if', 'for', 'while', 'import', 'try', 'catch', 'print', 'str', 'num']) assert.ok(items.some(item => item.label === name));
@@ -75,6 +124,8 @@ test('hover signatures and descriptions match implemented API behavior', () => {
 });
 
 test('bindings respect ordinary lexical shadowing and invalidate assignments', () => {
+  assert.deepEqual(labels('import "math"\nfor key, math in {} do math.'), []);
+  assert.deepEqual(labels('import "math"\nfor key, math in {} do end\nmath.sq'), ['sqrt']);
   assert.deepEqual(labels('var print = fn() end\npri'), []);
   assert.equal(at('fn print(x) end\nprint(1)', 'print'), undefined);
   assert.equal(at('fn f(print)\n print(1)\nend', 'print'), undefined);

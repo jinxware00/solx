@@ -32,7 +32,7 @@ function decodeReport(source, stdout, code) {
   }
   return report.diagnostics.map(item => {
     const { start, end } = item.range || {};
-    if (item.severity !== 'error' || !['lex-error', 'parse-error', 'syntax-limit'].includes(item.code)
+    if (item.severity !== 'error' || !['lex-error', 'parse-error', 'syntax-limit', 'undefined-name'].includes(item.code)
         || typeof item.message !== 'string' || !item.message.length || item.message.length > 65536
         || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end
         || !boundaries.has(start) || !boundaries.has(end)) throw new Error('Invalid diagnostic range or content from Solx check.');
@@ -40,16 +40,44 @@ function decodeReport(source, stdout, code) {
   });
 }
 
+function decodeSymbols(source, stdout) {
+  const { symbols } = JSON.parse(stdout);
+  if (!Array.isArray(symbols) || symbols.length > 10000) throw new Error('Solx did not return a supported symbol list. Update the interpreter for Outline support.');
+  const required = new Set(symbols.flatMap(item => [item.range?.start, item.range?.end, item.selectionRange?.start, item.selectionRange?.end]));
+  const boundaries = new Map([[0, 0]]);
+  let bytes = 0, offset = 0;
+  for (const character of source) {
+    bytes += Buffer.byteLength(character, 'utf8'); offset += character.length;
+    if (required.has(bytes)) boundaries.set(bytes, offset);
+  }
+  return symbols.map(item => {
+    const { range, selectionRange: selection } = item;
+    if (typeof item.name !== 'string' || !item.name.length || item.name.length > 65536
+      || !['function', 'variable', 'constant', 'module'].includes(item.kind)
+      || !range || !selection
+      || ![range.start, range.end, selection.start, selection.end].every(n => Number.isSafeInteger(n) && boundaries.has(n))
+      || range.start > selection.start || selection.start >= selection.end || selection.end > range.end) {
+      throw new Error('Invalid symbol range or content from Solx.');
+    }
+    return { name: item.name, kind: item.kind,
+      start: boundaries.get(range.start), end: boundaries.get(range.end),
+      selectionStart: boundaries.get(selection.start), selectionEnd: boundaries.get(selection.end) };
+  });
+}
+
 function startCheck(launch, source, { start = startProcess, snapshot: prepare = createSnapshot,
-  platform = process.platform, timeoutMs = 30000, onCleanupError, ...dependencies } = {}) {
+  platform = process.platform, timeoutMs = 30000, onCleanupError, symbols = false, ...dependencies } = {}) {
   if (Buffer.byteLength(source, 'utf8') > MAX_SOURCE_BYTES) throw new Error('Solx checking is limited to 1 MiB of UTF-8 source.');
   let stdout = '', stderr = '', timedOut = false, stopped = false, run, snapshot, disposal, timeout;
   const dispose = () => snapshot && (disposal ||= snapshot.dispose());
+  const preparation = (async () => {
+    if (platform === 'win32') snapshot = await prepare(source, { onCleanupError });
+  })();
   const work = (async () => {
     try {
       // File checks avoid the measured Windows startup stall in stdin mode.
       // Keep exact buffer bytes and the same non-executing JSON protocol.
-      if (platform === 'win32') snapshot = await prepare(source, { onCleanupError });
+      if (platform === 'win32') await preparation;
       if (stopped || timedOut) return { cancelled: true };
       const args = [...launch.args, ...(snapshot ? ['--', snapshot.file] : ['--stdin'])];
       run = start({ ...launch, args }, () => {}, { ...dependencies, platform,
@@ -76,9 +104,13 @@ function startCheck(launch, source, { start = startProcess, snapshot: prepare = 
     try { diagnostics = decodeReport(source, stdout, result.code); }
     catch (error) { throw new Error(`${error.message}${stderr.trim() ? `\n${stderr.trim().slice(0, 2000)}` : ''}`); }
     if (result.inputError) throw new Error(`Could not send source to Solx check: ${result.inputError.message}`);
-    return { diagnostics };
+    return { diagnostics, ...(symbols ? { symbols: decodeSymbols(source, stdout) } : {}) };
   }).finally(async () => { clearTimeout(timeout); await dispose(); });
-  return { completion, stop() { stopped = true; run?.stop(); } };
+  // A timeout can finish before snapshot creation. Shutdown must also await
+  // that late write, without waiting forever for a failed process termination.
+  const cleanup = completion.then(() => {}, () => {})
+    .then(() => preparation).then(dispose).then(() => {}, () => {});
+  return { completion, cleanup, stop() { stopped = true; run?.stop(); } };
 }
 
-module.exports = { MAX_SOURCE_BYTES, decodeReport, startCheck };
+module.exports = { MAX_SOURCE_BYTES, decodeReport, decodeSymbols, startCheck };

@@ -56,6 +56,44 @@ function expectScope(line, text, scope, occurrence = 0) {
   }
 }
 
+test('current runtime leaves braces literal in ordinary and raw strings', () => {
+  const lines = tokenize('var plain = "Hi {name}, {name + 1}"\nvar raw = """Hi {name}\n{print(42)}"""');
+  for (const line of lines) {
+    assert.ok(line.tokens.every(token => !token.scopes.some(scope => scope.includes('interpolation'))),
+      'String braces are literal at runtime: ' + line.line);
+  }
+});
+
+test('raw strings carry multiline scopes and do not process escapes or comments', () => {
+  const lines = tokenize('var text = """first {name}\n-- print(42) \\q "one" ""two""\nlast""" print(1)');
+  expectScope(lines[0], 'first {name}', 'string.quoted.triple.double.solx');
+  expectScope(lines[1], '-- print(42) \\q "one" ""two""', 'string.quoted.triple.double.solx');
+  expectScope(lines[2], 'last', 'string.quoted.triple.double.solx');
+  expectScope(lines[2], 'print', 'support.function.builtin.solx');
+  assert.ok(lines[1].tokens.every(token => !token.scopes.some(scope =>
+    scope.startsWith('comment.') || scope.startsWith('invalid.') || scope.includes('escape'))));
+});
+
+test('raw closing delimiters ignore preceding backslashes and empty literals recover', () => {
+  const lines = tokenize('var text = """raw\\""" print(1)\nvar empty = """""" print(2)\nvar open = """unterminated\nprint(3)');
+  expectScope(lines[0], 'raw\\', 'string.quoted.triple.double.solx');
+  expectScope(lines[0], 'print', 'support.function.builtin.solx');
+  expectScope(lines[1], 'print', 'support.function.builtin.solx');
+  expectScope(lines[3], 'print(3)', 'string.quoted.triple.double.solx');
+});
+
+test('raw imports preserve strings and contextual aliases across a multiline literal', () => {
+  const lines = tokenize('import """math""" as maths\nimport """./folder/\nmodule.solx""" as localModule -- after');
+  expectScope(lines[0], 'import', 'keyword.control.import.solx');
+  expectScope(lines[0], 'math', 'string.quoted.triple.double.solx');
+  expectScope(lines[0], 'as', 'keyword.control.import.solx');
+  expectScope(lines[0], 'maths', 'entity.name.namespace.solx');
+  expectScope(lines[1], './folder/', 'string.quoted.triple.double.solx');
+  expectScope(lines[2], 'module.solx', 'string.quoted.triple.double.solx');
+  expectScope(lines[2], 'localModule', 'entity.name.namespace.solx');
+  expectScope(lines[2], '-- after', 'comment.line.double-dash.solx');
+});
+
 test('manifest contributes the Solx grammar and editing resources', () => {
   const manifest = readJSON('package.json');
   const language = manifest.contributes.languages.find((item) => item.id === 'solx');
@@ -93,7 +131,7 @@ test('declarations, annotations, and functions use distinct scopes', () => {
 });
 
 test('all implemented control words, logical operators, and reserved error handling', () => {
-  for (const word of ['break', 'continue', 'do', 'else', 'elseif', 'end', 'for', 'if', 'import', 'return', 'then', 'while']) {
+  for (const word of ['break', 'continue', 'do', 'else', 'elseif', 'end', 'for', 'in', 'if', 'import', 'return', 'then', 'while']) {
     expectScope(tokenize(word)[0], word, 'keyword.control.solx');
   }
   for (const word of ['and', 'or', 'not']) {
@@ -144,15 +182,15 @@ test('supported escapes and invalid escapes receive separate scopes', () => {
   expectScope(line, '-- comment', 'comment.line.double-dash.solx');
 });
 
-test('only documented simple double-quoted placeholders are styled', () => {
+test('ordinary string braces remain literal while explicit escapes retain their scopes', () => {
   const lines = tokenize(String.raw`var text = "Hi {name}, \{literal}, {name + 1}"
 var single = '{name}'`);
-  expectScope(lines[0], 'name', 'variable.other.interpolation.solx');
+  expectScope(lines[0], 'name', 'string.quoted.double.solx');
   expectScope(lines[0], '\\{', 'constant.character.escape.solx');
   expectScope(lines[0], 'literal', 'string.quoted.double.solx');
   expectScope(lines[0], 'name + 1', 'string.quoted.double.solx');
   expectScope(lines[1], '{name}', 'string.quoted.single.solx');
-  assert.equal(lines[0].tokens.filter((token) => token.scopes.includes('variable.other.interpolation.solx')).length, 1);
+  assert.equal(lines[0].tokens.filter((token) => token.scopes.includes('variable.other.interpolation.solx')).length, 0);
   assert.ok(lines[1].tokens.every((token) => !token.scopes.includes('meta.interpolation.solx')));
 });
 

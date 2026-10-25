@@ -95,3 +95,30 @@ test('checker reads unsaved buffers and maps real Unicode lexer/parser ranges wi
   if (process.platform === 'win32') assert.equal(snapshots.length, 4);
   for (const snapshot of snapshots) assert.equal(fs.existsSync(path.dirname(snapshot)), false);
 });
+
+test('real parser symbols and optional names map Unicode buffers without executing imports or calls', async () => {
+  const { startCheck } = require('../src/checker.cjs');
+  const source = 'var text="😀"\r\nimport "./missing.solx" as dep\r\nfn greet(name) return name end\r\nprint(missing)';
+  const launch = { executable: binary, args: ['check', '--json', '--symbols', '--names'], cwd: fixture };
+  const run = startCheck(launch, source, { symbols: true });
+  const { diagnostics, symbols } = await run.completion;
+  await run.cleanup;
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].code, 'undefined-name');
+  assert.equal(source.slice(diagnostics[0].start, diagnostics[0].end), 'missing');
+  assert.deepEqual(symbols.map(item => item.name), ['text', 'dep', 'greet']);
+  assert.deepEqual(symbols.map(item => source.slice(item.selectionStart, item.selectionEnd)), ['text', 'dep', 'greet']);
+});
+
+test('iteration, raw strings and callback/string APIs execute as documented', () => {
+  const result = execute('import "core" import "list" import "string"\n' +
+    'var raw="""one\ntwo\\n""" core.assert(string.byte_len(raw)==9)\n' +
+    'var result=list.map([1,2,3],fn(x) return x*2 end)\n' +
+    'core.assert(list.fold(result,0,fn(a,x) return a+x end)==12)\n' +
+    'core.assert(list.filter(result,fn(x) return x>2 end)==[4,6])\n' +
+    'core.assert(list.sorted(result,fn(a,b) return b-a end)==[6,4,2])\n' +
+    'for index,value in result do core.assert(value==index*2) end\n' +
+    'core.assert(string.replace("banana","na","!")=="ba!!")\n' +
+    'core.assert(string.from_codepoints(string.codepoints("😀é"))=="😀é")');
+  assert.equal(result.status, 0, result.stderr);
+});

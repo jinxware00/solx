@@ -1,7 +1,7 @@
 {
   "name": "solx-language-support",
   "displayName": "Solx Language Support",
-  "description": "Syntax highlighting, live syntax diagnostics, run commands, completions, and hover documentation for Solx.",
+  "description": "Syntax highlighting, diagnostics, Outline symbols, run commands, completions, and hover documentation for Solx.",
   "version": "0.4.0",
   "publisher": "jinxware00",
   "author": {
@@ -70,7 +70,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "test": "node --test test/*.test.cjs",
+    "test": "node --test --test-concurrency=1 test/*.test.cjs",
     "test:interpreter": "node --test test/interpreter.cjs",
     "test:host": "node scripts/test-host.cjs",
     "icon": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/render-icon.ps1",
@@ -156,6 +156,18 @@
           "minimum": 100,
           "maximum": 5000,
           "description": "Wait this many milliseconds after edits before checking syntax."
+        },
+        "solx.diagnostics.checkNames": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": false,
+          "description": "Also report definitely unbound names using conservative single-buffer analysis. Requires Solx 0.2. Does not resolve imports, types, or execution order."
+        },
+        "solx.symbols.enabled": {
+          "type": "boolean",
+          "scope": "resource",
+          "default": true,
+          "description": "Show parser-derived declarations in Outline and Go to Symbol. Requires Solx 0.2 and workspace trust. Uses the same temporary buffer transport as diagnostics on Windows."
         },
         "solx.diagnostics.timeoutMs": {
           "type": "number",

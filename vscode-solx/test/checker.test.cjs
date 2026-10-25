@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
-const { decodeReport, startCheck: check, MAX_SOURCE_BYTES } = require('../src/checker.cjs');
+const { decodeReport, decodeSymbols, startCheck: check, MAX_SOURCE_BYTES } = require('../src/checker.cjs');
 const startCheck = (launch, source, options) => check({ args: [], ...launch }, source, { platform: 'linux', ...options });
 const { createLaunch } = require('../src/runner.cjs');
 const report = (diagnostics = []) => ({ schemaVersion: 1, offsetEncoding: 'utf-8', source: '<stdin>', ok: !diagnostics.length, diagnostics, error: null });
@@ -39,6 +39,8 @@ test('check launch preserves executable discovery and Cargo freshness with no so
   assert.deepEqual(launch.args, ['check', '--json']);
   const cargo = await createLaunch({ file, check: true, workspace: path.dirname(file), cargoManifestPath: 'Cargo.toml' }, dependencies);
   assert.deepEqual(cargo.args.slice(-3), ['--', 'check', '--json']);
+  const analysis = await createLaunch({ file, check: true, names: true, symbols: true }, dependencies);
+  assert.deepEqual(analysis.args, ['check', '--json', '--names', '--symbols']);
 });
 
 test('checker separates stderr from JSON, sends exact stdin, and reports EPIPE safely', async () => {
@@ -111,11 +113,35 @@ test('cancellation and timeout during snapshot preparation prevent launching and
     });
     if (timeout) await assert.rejects(run.completion, /timed out/);
     else run.stop();
+    let cleaned = false;
+    run.cleanup.then(() => { cleaned = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(cleaned, false);
     ready({ file: 'snapshot.solx', async dispose() { disposed++; } });
     if (!timeout) assert.deepEqual(await run.completion, { cancelled: true });
-    await new Promise(resolve => setImmediate(resolve));
+    await run.cleanup;
     assert.equal(disposed, 1); assert.equal(launches, 0);
   }
+});
+
+test('symbols validate UTF-8 declaration and selection ranges and reject incompatible data', () => {
+  const source = '"😀" var name=1';
+  const start = Buffer.byteLength(source.slice(0, source.indexOf('var')));
+  const selection = Buffer.byteLength(source.slice(0, source.indexOf('name')));
+  const symbol = { name: 'name', kind: 'variable', range: { start, end: Buffer.byteLength(source) },
+    selectionRange: { start: selection, end: selection + 4 } };
+  const result = decodeSymbols(source, JSON.stringify({ symbols: [symbol] }));
+  assert.equal(source.slice(result[0].selectionStart, result[0].selectionEnd), 'name');
+  assert.equal(source.slice(result[0].start, result[0].end), 'var name=1');
+  for (const value of [undefined, [{ ...symbol, kind: 'unknown' }],
+    [{ ...symbol, selectionRange: { start: 2, end: 3 } }],
+    [{ ...symbol, range: { start: selection + 1, end: selection + 4 } }],
+    [{ ...symbol, name: '' }], [null]]) {
+    assert.throws(() => decodeSymbols(source, JSON.stringify({ symbols: value })));
+  }
+  assert.deepEqual(decodeSymbols('', JSON.stringify({ symbols: [] })), []);
+  const names = decodeReport('missing', JSON.stringify(report([{ ...diagnostic(0, 7), code: 'undefined-name' }])), 1);
+  assert.equal(names[0].code, 'undefined-name');
 });
 
 test('Windows snapshots are removed after launch, process, protocol and output failures', async () => {

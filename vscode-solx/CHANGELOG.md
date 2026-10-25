@@ -2,6 +2,14 @@
 
 ## 0.4.0 (unreleased)
 
+- Add parser-derived Outline and Go to Symbol entries, plus opt-in conservative
+  undefined-name diagnostics (`solx.diagnostics.checkNames`).
+- Recognize raw multiline strings and collection iteration; add iteration snippets.
+- Document string replacement/Unicode helpers and callback collection APIs in
+  completion and hover. Literal string braces have no interpolation styling.
+- Await late snapshot preparation and superseded Outline cleanup on shutdown.
+- Share concurrent Outline requests without cancelling other consumers; refresh
+  symbols after configuration/trust changes and prioritize explicit syntax checks.
 - Add completion and hover for the explicitly imported `json` module.
 - Update reference documentation for Solx 0.2's storable nil and exact checked
   integer arithmetic. These language features require a matching interpreter.

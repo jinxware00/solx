@@ -32,6 +32,7 @@ function host(overrides = {}) {
     start: (_launch, source, options) => {
       let finish, fail;
       const request = { source, completion: new Promise((resolve, reject) => { finish = resolve; fail = reject; }),
+        cleanup: overrides.cleanup,
         finish: value => finish(value), fail: error => fail(error), cleanupError: options.onCleanupError,
         stopped: false, stop() { this.stopped = true; } };
       requests.push(request); return request;
@@ -86,6 +87,21 @@ test('close, disable and dispose cancel work and reject results without phantom 
     assert.equal((await pending).status, 'cancelled'); await tick();
     assert.equal(h.result(), undefined); h.controller.dispose();
   }
+});
+
+test('an explicit check runs before queued background documents without interrupting active work', async () => {
+  const h = host();
+  const first = h.controller.request(h.doc, true); await tick();
+  const background = h.controller.request(h.makeDocument('background.solx', 'var background=1'));
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const manual = h.controller.request(h.makeDocument('manual.solx', 'var manual=1'), true);
+  assert.equal(h.requests.length, 1); assert.equal(h.requests[0].stopped, false);
+  h.requests[0].finish({ diagnostics: [] }); await first; await tick();
+  assert.equal(h.requests[1].source, 'var manual=1');
+  h.requests[1].finish({ diagnostics: [] }); await manual; await tick();
+  assert.equal(h.requests[2].source, 'var background=1');
+  h.requests[2].finish({ diagnostics: [] }); await background;
+  await h.controller.dispose();
 });
 
 test('untrusted, virtual and large buffers never launch; untitled buffers are supported', async t => {
@@ -155,4 +171,24 @@ test('disposal waits for active checker cleanup and remains idempotent', async (
   await disposal;
   assert.equal(finished, true);
   assert.equal(h.result(), undefined);
+});
+
+test('optional name checking is forwarded and described accurately', async t => {
+  const h = host({ settings: { 'diagnostics.checkNames': true } }); t.after(() => h.controller.dispose());
+  const pending = h.controller.request(h.doc, true); await tick();
+  assert.equal(h.launched[0].names, true);
+  h.requests[0].finish({ diagnostics: [] }); await pending;
+  assert.match(h.status.tooltip, /conservative name/);
+  assert.match(h.status.text, /Check OK/);
+});
+
+test('shutdown awaits cleanup even after a timed-out request left the active queue', async () => {
+  let finish;
+  const h = host({ cleanup: new Promise(resolve => { finish = resolve; }) });
+  const pending = h.controller.request(h.doc, true); await tick();
+  h.requests[0].fail(new Error('timed out')); await pending; await tick();
+  let disposed = false;
+  const disposal = h.controller.dispose().then(() => { disposed = true; });
+  await tick(); assert.equal(disposed, false);
+  finish(); await disposal; assert.equal(disposed, true);
 });

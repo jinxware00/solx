@@ -6,6 +6,10 @@ const crypto = require('node:crypto');
 const { cliArguments } = require('./vscode-cli.cjs');
 const root = path.resolve(__dirname, '..');
 async function main() {
+const timeoutMs = Number(process.env.SOLX_HOST_TIMEOUT_MS || 600_000);
+if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 600_000) {
+  throw new Error('SOLX_HOST_TIMEOUT_MS must be an integer from 1000 to 600000.');
+}
 const candidates = [process.env.VSCODE_EXECUTABLE];
 if (process.platform === 'win32') {
   for (const directory of [process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs'), process.env.ProgramFiles]) {
@@ -28,13 +32,25 @@ const temporary = path.join(artifacts, 'temp');
 fs.mkdirSync(temporary);
 const resultFile = path.join(artifacts, 'results.json');
 const extensionDir = path.join(artifacts, 'extensions');
+const userData = path.join(artifacts, 'user-data');
+// Built-in chat/Git services can start even with --disable-extensions. Keep
+// unrelated background work out of this fresh test profile and its job budget.
+// No Solx setting or normal editor profile is changed.
+fs.mkdirSync(path.join(userData, 'User'), { recursive: true });
+fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify({
+  'chat.disableAIFeatures': true,
+  'git.enabled': false,
+  'git.autofetch': false,
+  'telemetry.telemetryLevel': 'off',
+  'update.mode': 'none',
+}, null, 2) + '\n');
 let extensionPath = root;
 if (packaged) {
   const pkg = require('../package.json');
   const vsix = path.join(root, `${pkg.name}-${pkg.version}.vsix`);
   if (!fs.existsSync(vsix)) throw new Error('Build the current VSIX with npm run package first.');
   // This is the same entry point used by the official code.cmd wrapper.
-  const install = cp.spawnSync(executable, [...cliArguments(executable), '--user-data-dir', path.join(artifacts, 'user-data'),
+  const install = cp.spawnSync(executable, [...cliArguments(executable), '--user-data-dir', userData,
     '--extensions-dir', extensionDir, '--install-extension', vsix, '--force'], {
     env: { ...process.env, VSCODE_DEV: '', ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', windowsHide: true, timeout: 60_000,
   });
@@ -42,8 +58,10 @@ if (packaged) {
   assert.equal(install.status, 0, install.error?.message || install.stderr || install.stdout);
   extensionPath = path.join(extensionDir, `${pkg.publisher}.${pkg.name}-${pkg.version}`);
   const installed = JSON.parse(fs.readFileSync(path.join(extensionPath, 'package.json'), 'utf8'));
-  assert.equal(installed.publisher, pkg.publisher);
-  assert.equal(installed.version, pkg.version);
+  // VS Code adds installation metadata, but every shipped manifest field
+  // (including settings and engine compatibility) must match this checkout.
+  const { __metadata, ...installedManifest } = installed;
+  assert.deepEqual(installedManifest, pkg, 'Packaged manifest does not match the current source');
   const files = fs.readdirSync(extensionPath, { recursive: true }).filter(file => fs.statSync(path.join(extensionPath, file)).isFile());
   const required = ['README.md', 'LICENSE', 'CHANGELOG.md', 'images/icon.png', 'syntaxes/solx.tmLanguage.json',
     'language-configuration.json', 'data/snippets.json', 'examples/hello.solx',
@@ -63,30 +81,43 @@ if (process.platform === 'win32') { env.TEMP = temporary; env.TMP = temporary; }
 else env.TMPDIR = temporary;
 delete env.ELECTRON_RUN_AS_NODE;
 const child = cp.spawn(executable, [
-  '--user-data-dir', path.join(artifacts, 'user-data'),
+  '--user-data-dir', userData,
   '--extensions-dir', extensionDir,
   '--extensionDevelopmentPath=' + extensionPath,
   '--extensionTestsPath=' + path.join(root, 'test/host/index.cjs'),
   '--disable-extensions', '--disable-workspace-trust', '--skip-welcome', '--skip-release-notes',
   workspace,
-], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-let log = '';
-child.stdout.on('data', data => { log += data; });
-child.stderr.on('data', data => { log += data; });
+], { env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] });
+// Keep draining noisy hosts without allowing diagnostic output to grow the
+// harness heap indefinitely. This is not a memory limit for the editor tree.
+let log = '', truncated = false, timedOut = false;
+const capture = data => {
+  log += data;
+  if (log.length > 2_000_000) { log = log.slice(-2_000_000); truncated = true; }
+};
+child.stdout.on('data', capture);
+child.stderr.on('data', capture);
 child.on('error', error => { console.error(error); process.exitCode = 1; });
 const timeout = setTimeout(() => {
-  console.error('Extension Host timed out after 600 seconds.');
+  timedOut = true;
+  console.error(`Extension Host timed out after ${timeoutMs} ms.`);
+  if (!child.pid) return;
   if (process.platform === 'win32') {
-    cp.spawnSync(path.join(process.env.SystemRoot, 'System32/taskkill.exe'), ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true });
-  } else child.kill('SIGKILL');
-}, 600_000);
+    const killed = cp.spawnSync(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32/taskkill.exe'),
+      ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 10_000 });
+    if (killed.status !== 0) child.kill();
+  } else {
+    try { process.kill(-child.pid, 'SIGKILL'); }
+    catch { child.kill('SIGKILL'); }
+  }
+}, timeoutMs);
 child.on('close', code => {
   clearTimeout(timeout);
-  fs.writeFileSync(path.join(artifacts, 'host.log'), log);
+  fs.writeFileSync(path.join(artifacts, 'host.log'), (truncated ? '[Earlier host output discarded after log limit]\n' : '') + log);
   const report = fs.existsSync(resultFile) ? JSON.parse(fs.readFileSync(resultFile, 'utf8')) : undefined;
   const snapshots = fs.readdirSync(temporary).filter(file => file.startsWith('solx-check-'));
   if (snapshots.length) console.error('Snapshot cleanup failed:', snapshots);
-  if (code !== 0 || !report?.success || snapshots.length) {
+  if (timedOut || code !== 0 || !report?.success || snapshots.length) {
     console.error(log.slice(-8000));
     console.error(report || 'No Extension Host results were produced.');
     process.exitCode = 1;

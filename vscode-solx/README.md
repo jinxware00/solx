@@ -3,7 +3,7 @@
 # Solx Language Support
 
 Write, check, and run `.solx` files in Visual Studio Code. Syntax highlighting,
-live syntax diagnostics, completions, construct snippets, and API documentation follow the existing
+live diagnostics, Outline symbols, completions, construct snippets, and API documentation follow the existing
 [Solx implementation and specification](https://github.com/jinxware00/solx/blob/main/docs/SPEC.md).
 
 ## Features
@@ -11,9 +11,11 @@ live syntax diagnostics, completions, construct snippets, and API documentation 
 - **Run Current File** with streamed output, error reporting, and a stop command.
 - **Live syntax diagnostics** from the real lexer/parser, including unsaved and
   untitled buffers, without executing Solx code or loading imports.
+- **Outline and Go to Symbol** for parser-derived functions, variables, constants,
+  and imports. Optional conservative undefined-name checks use the same parser.
 - **Completions** for implemented keywords, `print`, `str`, `num`, variable
   annotations, and explicitly imported standard modules, including aliases.
-- **Snippets** for named/anonymous functions, conditionals, numeric/while
+- **Snippets** for named/anonymous functions, conditionals, numeric/collection/while
   loops, `try`/`catch`, imports, and variable declarations. Trigger suggestions with Ctrl+Space.
 - **Hover documentation** for recognized built-ins and the `core`, `math`,
   `string`, `list`, `object`, and `json` APIs, including signatures and constraints.
@@ -28,8 +30,8 @@ fn greet(name)
 end
 
 var names = [" Jinx ", "Ada"]
-for i = 1, #names do
-    print(greet(names[i]))
+for name in names do
+    print(greet(name))
 end
 ```
 
@@ -59,7 +61,7 @@ not update those bundles or an installed interpreter.
 ## Configure the interpreter
 
 Highlighting, completion, snippets, and hover work without installing Solx.
-Running and syntax diagnostics require a trusted workspace and one of these
+Running, diagnostics, and Outline require a trusted workspace and one of these
 interpreter setups:
 
 | Setup | Setting | Behavior |
@@ -121,7 +123,7 @@ The bundled `examples/hello.solx` remains runnable from the repository root:
 cargo run -- vscode-solx/examples/hello.solx
 ```
 
-## Completion, hover, and diagnostics
+## Completion, hover, diagnostics, and Outline
 
 Type `import "math"`, then `math.` to see the documented members. An alias
 such as `import "math" as m` enables `m.` too. Arbitrary object members and
@@ -151,7 +153,7 @@ exclusive file creation and the temporary directory's Windows access controls.
 They are removed after completion, errors, cancellation, or timeouts; normal
 extension shutdown waits for pending cleanup. Cleanup
 failures are reported with the path; a crash or OS access denial can leave a
-snapshot behind. Disable `solx.diagnostics.enabled` if you do not want unsaved
+snapshot behind. Disable both `solx.diagnostics.enabled` and `solx.symbols.enabled` if you do not want unsaved
 buffers written to temporary files. Other platforms use `check --json --stdin`
 without creating snapshots. No buffer content is embedded in command arguments.
 
@@ -162,7 +164,8 @@ Cargo build failures, and timeouts are explained there and in the Solx output
 channel; they are not fabricated source diagnostics. Update/rebuild the
 interpreter if its protocol is missing. There is no fallback to executing code.
 
-Checks run one at a time. New edits, closing a document, disabling diagnostics,
+Diagnostic checks run one at a time. Outline requests may run alongside them.
+New edits, closing a document, disabling diagnostics,
 and changing interpreter settings cancel obsolete work. Late results never
 overwrite diagnostics for newer text. Only trusted local-file and untitled
 buffers up to 1 MiB of UTF-8 source are checked. Cargo mode rebuilds as needed
@@ -172,11 +175,17 @@ configured Rust checkout must be trusted, including its build scripts.
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `solx.diagnostics.enabled` | `true` | Enable automatic and manual syntax checking. |
+| `solx.diagnostics.checkNames` | `false` | Also check for definitely unbound names. Requires Solx 0.2. |
+| `solx.symbols.enabled` | `true` | Provide parser-derived Outline and Go to Symbol entries. Requires Solx 0.2. |
 | `solx.diagnostics.delayMs` | `350` | Debounce edits, from 100 to 5,000 ms. |
 | `solx.diagnostics.timeoutMs` | `30000` | Check timeout, from 1,000 to 120,000 ms; increase for cold Cargo builds. |
 
-Checking covers syntax only, with one error at a time. It does not resolve
-imports, check names/types, infer runtime values, or detect infinite loops.
+Default checking covers syntax, with one error at a time. Enable
+`solx.diagnostics.checkNames` to report up to 100 unbound names after syntax
+passes. The analysis predeclares block locals and file globals, supports
+parameters and loop/catch scopes, and admits the implicit `exports` binding.
+It can miss use-before-definition and conditional declaration problems; it
+does not infer values, validate signatures/types, load imports, or detect infinite loops.
 Runtime errors still appear when you explicitly run a file. The versioned
 CLI schema is documented in the repository's
 [checking guide](https://github.com/jinxware00/solx/blob/main/docs/CHECKING.md).
@@ -186,9 +195,15 @@ and the separate try/catch scopes are respected when recognizing APIs. These
 keywords require a current interpreter. JSON completion/hover and the updated
 nil/number reference target Solx 0.2; use Cargo mode for source development.
 
-The existing grammar also styles simple double-quoted `{name}` placeholders,
-but string interpolation remains unimplemented and is not offered as a
-working snippet. Use concatenation (`..`) and `~=` for inequality. No formatting, debugger, or custom block
+Outline uses `check --symbols --json` and shows declaration names and exact
+source selections. It works with unsaved buffers, caches by document version,
+and suppresses stale/cancelled results. Syntax-invalid buffers have no symbols.
+It is a flat declaration list; references, rename, and cross-file navigation
+are not implemented.
+
+Raw multiline strings use `"""text"""`, preserve newlines and backslashes,
+and suppress completions/hover throughout their content. Interpolation remains
+unimplemented: braces are literal text. Use concatenation (`..`) and `~=` for inequality. No formatting, debugger, or custom block
 indentation/folding is provided. Colors depend on your theme.
 
 ## Develop, test, and package
@@ -210,14 +225,14 @@ npm run test:package -- 1.85.2
 ```
 
 - `npm test` checks TextMate scopes, completions, hover, runner behavior,
-  diagnostics/protocol/snapshot lifecycle handling, metadata, and local assets.
+  diagnostics/symbols/protocol/snapshot lifecycle handling, metadata, and local assets.
   It runs before packaging.
 - `test:interpreter` builds the existing CLI with Cargo in `.test-artifacts`
   and runs valid/invalid programs, snippet defaults, and non-executing buffer
   checks with real byte ranges. It runs no Rust tests.
 - `test:host` launches an isolated VS Code Extension Development Host and
   exercises the real providers, live Problems entries, unsaved/untitled
-  diagnostics, and run command. It requires desktop VS Code;
+  diagnostics, Outline, name checks, raw strings, and run command. It requires desktop VS Code;
   set `VSCODE_EXECUTABLE` to its executable if discovery fails. Results are
   written under `.test-artifacts`. This opens a temporary editor window.
   To download and test an isolated official build instead, use

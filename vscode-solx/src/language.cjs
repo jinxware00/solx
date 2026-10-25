@@ -14,6 +14,11 @@ function scan(source) {
     if (source.startsWith('--', i)) {
       kind = 'comment';
       while (i < source.length && !/[\r\n]/.test(source[i])) i++;
+    } else if (source.startsWith('"""', i)) {
+      kind = 'string';
+      const end = source.indexOf('"""', i + 3);
+      closed = end !== -1;
+      i = closed ? end + 3 : source.length;
     } else if (source[i] === '"' || source[i] === "'") {
       kind = 'string';
       const quote = source[i++];
@@ -63,7 +68,10 @@ function bindingsAt(tokens, offset) {
       }
     } else if (['if', 'for', 'while', 'try'].includes(token.text)) {
       scopes.push(new Map());
-      if (token.text === 'for' && tokens[i + 1]?.kind === 'identifier') current().set(text(i + 1), null);
+      if (token.text === 'for' && tokens[i + 1]?.kind === 'identifier') {
+        current().set(text(i + 1), null);
+        if (text(i + 2) === ',' && tokens[i + 3]?.kind === 'identifier' && text(i + 4) === 'in') current().set(text(i + 3), null);
+      }
     } else if (['else', 'elseif', 'catch'].includes(token.text) && scopes.length > 1) {
       scopes[scopes.length - 1] = new Map();
       if (token.text === 'catch' && tokens[i + 1]?.kind === 'identifier') current().set(text(i + 1), null);
@@ -73,7 +81,9 @@ function bindingsAt(tokens, offset) {
       // Suppress documentation for user bindings even when declared global.
       (token.text === 'global' ? scopes[0] : current()).set(text(i + 1), null);
     } else if (token.text === 'import' && tokens[i + 1]?.kind === 'string' && tokens[i + 1].closed) {
-      const specifier = text(i + 1).slice(1, -1);
+      const literal = text(i + 1);
+      const delimiterLength = literal.startsWith('"""') ? 3 : 1;
+      const specifier = literal.slice(delimiterLength, -delimiterLength);
       const alias = text(i + 2) === 'as' ? tokens[i + 3] : undefined;
       const name = alias?.kind === 'identifier' ? alias.text : specifier.split(/[\\/]/).pop().replace(/\.solx$/, '');
       current().set(name, own(modules, specifier) ? { module: specifier } : null);

@@ -36,20 +36,21 @@ function isCargoArtifact(executable) {
   return /(?:^|[\\/])target[\\/].*[\\/](?:solx|solx\.exe)$/i.test(executable);
 }
 
-async function createLaunch({ file, executablePath = '', cargoManifestPath = '', workspace, check = false }, dependencies = {}) {
+async function createLaunch({ file, executablePath = '', cargoManifestPath = '', workspace, check = false, names = false, symbols = false }, dependencies = {}) {
   const find = dependencies.findExecutable || findExecutable;
   const stat = dependencies.stat || fs.stat;
   const realpath = dependencies.realpath || fs.realpath;
   if (!path.isAbsolute(file)) throw new Error('Run requires an absolute, saved file path.');
   if (executablePath && cargoManifestPath) throw new Error('Configure either solx.executablePath or solx.cargoManifestPath, not both.');
   const cwd = path.dirname(file);
+  const checkArgs = ['check', '--json', ...(names ? ['--names'] : []), ...(symbols ? ['--symbols'] : [])];
   if (cargoManifestPath) {
     const manifest = resolveSetting(cargoManifestPath, workspace);
     if (path.basename(manifest) !== 'Cargo.toml' || !(await stat(manifest)).isFile()) {
       throw new Error('solx.cargoManifestPath must point to the Solx Cargo.toml file.');
     }
     const executable = await find('cargo', { workspace });
-    return { executable, args: ['run', '--quiet', '--locked', '--manifest-path', manifest, '--bin', 'solx', '--', ...(check ? ['check', '--json'] : [file])], cwd };
+    return { executable, args: ['run', '--quiet', '--locked', '--manifest-path', manifest, '--bin', 'solx', '--', ...(check ? checkArgs : [file])], cwd };
   }
   const executable = await find(executablePath || 'solx', { workspace });
   // Refuse build-tree binaries, including symlinks to them. Cargo mode checks
@@ -58,7 +59,7 @@ async function createLaunch({ file, executablePath = '', cargoManifestPath = '',
     throw new Error('This executable is in a Cargo target directory and may be stale. Set solx.cargoManifestPath to the Solx Cargo.toml and clear solx.executablePath to rebuild before running.');
   }
   // For checks, the checker appends the platform's buffer input arguments.
-  return { executable, args: check ? ['check', '--json'] : ['--', file], cwd };
+  return { executable, args: check ? checkArgs : ['--', file], cwd };
 }
 
 function startProcess(launch, onOutput, { spawn = cp.spawn, platform = process.platform, env = process.env, kill = process.kill, maxOutput = 2_000_000, input, onStdout = onOutput, onStderr = onOutput } = {}) {

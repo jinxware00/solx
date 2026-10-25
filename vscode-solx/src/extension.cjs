@@ -2,12 +2,14 @@ const vscode = require('vscode');
 const { completions, hover } = require('./language.cjs');
 const { createLaunch, startProcess } = require('./runner.cjs');
 const { registerDiagnostics } = require('./diagnostics.cjs');
-let diagnostics;
+const { registerSymbols } = require('./symbols.cjs');
+let diagnostics, symbols;
 
 function activate(context) {
   const output = vscode.window.createOutputChannel('Solx');
   diagnostics = registerDiagnostics(vscode, output);
-  context.subscriptions.push(diagnostics);
+  symbols = registerSymbols(vscode, output);
+  context.subscriptions.push(diagnostics, symbols);
   let running = false;
   let stopRequested = false;
   let process;
@@ -104,6 +106,6 @@ function activate(context) {
 
 // VS Code awaits deactivate; subscription disposal alone cannot wait for an
 // in-flight snapshot write or the checker process to release its input file.
-function deactivate() { return diagnostics?.dispose(); }
+function deactivate() { return Promise.allSettled([diagnostics?.dispose(), symbols?.dispose()]).then(() => {}); }
 
 module.exports = { activate, deactivate };

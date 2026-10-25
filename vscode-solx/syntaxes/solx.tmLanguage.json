@@ -24,26 +24,37 @@
       "end": "$"
     },
     "imports": {
-      "match": "\\b(import)\\b[ \\t]+(\"(?:\\\\.|[^\"\\\\\\r\\n])*\"|'(?:\\\\.|[^'\\\\\\r\\n])*')(?:[ \\t]+(as)[ \\t]+([A-Za-z_][A-Za-z0-9_]*))?",
-      "captures": {
-        "1": { "name": "keyword.control.import.solx" },
-        "2": { "patterns": [{ "include": "#strings" }] },
-        "3": { "name": "keyword.control.import.solx" },
-        "4": { "name": "entity.name.namespace.solx" }
-      }
+      "begin": "\\b(import)\\b[ \\t]+(?=[\"'])",
+      "beginCaptures": { "1": { "name": "keyword.control.import.solx" } },
+      "end": "(?=\\S)|$",
+      "applyEndPatternLast": true,
+      "patterns": [
+        { "include": "#strings" },
+        {
+          "match": "\\b(as)\\b[ \\t]+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.control.import.solx" },
+            "2": { "name": "entity.name.namespace.solx" }
+          }
+        }
+      ]
     },
     "strings": {
       "patterns": [
+        {
+          "name": "string.quoted.triple.double.solx",
+          "begin": "\"\"\"",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.solx" } },
+          "end": "\"\"\"",
+          "endCaptures": { "0": { "name": "punctuation.definition.string.end.solx" } }
+        },
         {
           "name": "string.quoted.double.solx",
           "begin": "\"",
           "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.solx" } },
           "end": "\"|$",
           "endCaptures": { "0": { "name": "punctuation.definition.string.end.solx" } },
-          "patterns": [
-            { "include": "#escapes" },
-            { "include": "#documented-placeholders" }
-          ]
+          "patterns": [{ "include": "#escapes" }]
         },
         {
           "name": "string.quoted.single.solx",
@@ -60,16 +71,6 @@
         { "name": "constant.character.escape.solx", "match": "\\\\[nrt\\\\\"'{}]" },
         { "name": "invalid.illegal.escape.solx", "match": "\\\\." }
       ]
-    },
-    "documented-placeholders": {
-      "comment": "SPEC section 8 documents double-quoted {name} interpolation; the current evaluator leaves it literal. Only simple placeholders are styled until expression/escaping rules are settled.",
-      "match": "(\\{)([A-Za-z_][A-Za-z0-9_]*)(\\})",
-      "name": "meta.interpolation.solx",
-      "captures": {
-        "1": { "name": "punctuation.section.interpolation.begin.solx" },
-        "2": { "name": "variable.other.interpolation.solx" },
-        "3": { "name": "punctuation.section.interpolation.end.solx" }
-      }
     },
     "functions": {
       "match": "\\b(fn)\\b[ \\t]+([A-Za-z_][A-Za-z0-9_]*)",
@@ -160,7 +161,7 @@
       "patterns": [
         { "name": "storage.type.function.solx", "match": "\\bfn\\b" },
         { "name": "storage.modifier.solx", "match": "\\b(?:var|global|const)\\b" },
-        { "name": "keyword.control.solx", "match": "\\b(?:break|continue|do|else|elseif|end|for|if|import|return|then|while)\\b" },
+        { "name": "keyword.control.solx", "match": "\\b(?:break|continue|do|else|elseif|end|for|in|if|import|return|then|while)\\b" },
         { "name": "keyword.control.reserved.solx", "match": "\\b(?:try|catch)\\b" },
         { "name": "constant.language.solx", "match": "\\b(?:true|false|nil)\\b" },
         { "name": "keyword.operator.logical.solx", "match": "\\b(?:and|or|not)\\b" }

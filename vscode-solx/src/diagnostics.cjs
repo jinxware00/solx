@@ -7,7 +7,7 @@ function registerDiagnostics(vscode, output, { launch = createLaunch, start = st
   const collection = vscode.languages.createDiagnosticCollection('solx');
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 5);
   status.command = 'solx.checkCurrentFile';
-  const jobs = new Map(), states = new Map(), reported = new Map();
+  const jobs = new Map(), states = new Map(), reported = new Map(), cleanups = new Set();
   let active, disposal, disposed = false;
   const key = document => document.uri.toString();
   const config = document => vscode.workspace.getConfiguration('solx', document.uri);
@@ -35,7 +35,8 @@ function registerDiagnostics(vscode, output, { launch = createLaunch, start = st
 
   async function drain() {
     if (disposed || active) return;
-    const job = [...jobs.values()].find(candidate => candidate.ready);
+    const ready = [...jobs.values()].filter(candidate => candidate.ready);
+    const job = ready.find(candidate => candidate.immediate) || ready[0];
     if (!job) return;
     active = job;
     const document = job.document;
@@ -50,6 +51,7 @@ function registerDiagnostics(vscode, output, { launch = createLaunch, start = st
       const file = document.uri.scheme === 'file' ? document.uri.fsPath : path.join(workspace || os.tmpdir(), 'untitled.solx');
       const settings = config(document);
       const command = await launch({ file, workspace, check: true,
+        names: settings.get('diagnostics.checkNames', false),
         executablePath: settings.get('executablePath', ''), cargoManifestPath: settings.get('cargoManifestPath', '') });
       if (!current(job)) return;
       job.process = start(command, job.source, {
@@ -60,6 +62,9 @@ function registerDiagnostics(vscode, output, { launch = createLaunch, start = st
           if (!disposed && !current(job)) output.appendLine(error.message);
         },
       });
+      const cleanup = Promise.resolve(job.process.cleanup || job.process.completion).then(() => {}, () => {});
+      cleanups.add(cleanup);
+      void cleanup.then(() => cleanups.delete(cleanup));
       const result = await job.process.completion;
       if (!current(job) || result.cancelled) return;
       const diagnostics = result.diagnostics.map(item => {
@@ -70,8 +75,10 @@ function registerDiagnostics(vscode, output, { launch = createLaunch, start = st
       });
       collection.set(document.uri, diagnostics);
       reported.delete(key(document));
-      state(document, diagnostics.length ? `$(error) Solx: ${diagnostics.length} error` : '$(check) Solx: Syntax OK',
-        'Lexer/parser check complete. Imports, names, types, and runtime behavior are not checked.');
+      const names = settings.get('diagnostics.checkNames', false);
+      state(document, diagnostics.length ? `$(error) Solx: ${diagnostics.length} error` : names ? '$(check) Solx: Check OK' : '$(check) Solx: Syntax OK',
+        names ? 'Syntax and conservative name check complete. Imports, types, and runtime behavior are not checked.'
+          : 'Lexer/parser check complete. Imports, names, types, and runtime behavior are not checked.');
       job.resolve({ status: 'checked', diagnostics: diagnostics.length });
     } catch (error) {
       if (current(job)) {
@@ -108,7 +115,7 @@ function registerDiagnostics(vscode, output, { launch = createLaunch, start = st
     }
     let resolve;
     const completion = new Promise(done => { resolve = done; });
-    const job = { document, version: document.version, source, resolve, ready: immediate };
+    const job = { document, version: document.version, source, resolve, ready: immediate, immediate };
     jobs.set(key(document), job);
     state(document, 'Solx: Check pending', 'Waiting for edits to settle.');
     if (immediate) void drain();
@@ -145,7 +152,7 @@ function registerDiagnostics(vscode, output, { launch = createLaunch, start = st
     try { process?.stop(); } catch (error) { output.appendLine(`Could not stop syntax check: ${error.message}`); }
     for (const subscription of subscriptions) subscription.dispose();
     states.clear(); reported.clear();
-    disposal = Promise.resolve(process?.completion).then(() => {}, () => {});
+    disposal = Promise.allSettled([...cleanups]).then(() => {});
     return disposal;
   } };
 }
