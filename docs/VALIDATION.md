@@ -4,7 +4,22 @@ The release pairs runtime **0.2.0** with **Sol Language Support**,
 `jinxware00.solx-ls` **0.1.0**. Test results below distinguish the current package
 from earlier artifacts. Generated packages, profiles and logs remain ignored.
 
-## Hosted validation - 2026-10-25
+## Published v0.2.0 - 2026-10-25
+
+The [v0.2.0 development release](https://github.com/jinxware00/solx/releases/tag/v0.2.0)
+was published from commit `b438b67946d9c13e4ca6228e422a249d4b7e5d82`.
+The [release workflow](https://github.com/jinxware00/solx/actions/runs/40222012232)
+and [CI](https://github.com/jinxware00/solx/actions/runs/40222012114) passed.
+Its four assets are the Windows ZIP, sanitized provenance JSON,
+`solx-ls-0.1.0.vsix`, and `SHA256SUMS`.
+
+The published VSIX is 113,271 bytes, SHA-256
+`b84c17085de79a761866e38fba4f0bbca82ca63f4c23d8a70d61bf899e9f051e`.
+It is distinct from the historical local package below. The `fs`, `path` and
+`time` source additions are after this release; these release results do not
+validate or distribute those additions.
+
+## Prerelease hosted validation - 2026-10-25
 
 [CI run 40221522191](https://github.com/jinxware00/solx/actions/runs/40221522191)
 passed on **Windows 2022, Ubuntu 24.04 and macOS 14** for commit `4073713`.
@@ -17,10 +32,10 @@ the clean bundle build and all 18 extracted installation/uninstallation cases.
 Hosted validation corrected a platform-dependent floating-point test boundary,
 PowerShell exit-code propagation and npm lockfile parsing, Windows ZIP entry
 separators, and redirected installer input with a byte-order marker. The runtime
-implementation was unchanged. Final publication still requires the tagged
-release workflow and its artifact verification to succeed.
+implementation was unchanged. The later tagged release passed its workflow
+and artifact verification as recorded above.
 
-## Current local evidence - 2026-10-25
+## Historical local evidence - 2026-10-25
 
 | Check | Result | Evidence |
 | --- | --- | --- |

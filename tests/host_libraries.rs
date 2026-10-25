@@ -504,9 +504,10 @@ fn symlinks_cannot_read_or_overwrite_outside_the_granted_directory() {
     assert!(outside.root.join("secret").exists());
 }
 
-#[cfg(unix)]
+// macOS filesystems reject this filename at creation, before Solx can read it.
+#[cfg(target_os = "linux")]
 #[test]
-fn invalid_filename_encoding_and_special_files_fail_without_waiting() {
+fn invalid_filename_encoding_is_rejected_by_directory_listing() {
     use std::os::unix::ffi::OsStringExt;
     let project = Project::new();
     let mut interpreter = project.interpreter(true, true);
@@ -520,6 +521,13 @@ fn invalid_filename_encoding_and_special_files_fail_without_waiting() {
         "fs.read_dir('.')",
         "filename is not valid UTF-8",
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn special_files_fail_without_waiting_for_a_fifo_peer() {
+    let project = Project::new();
+    let mut interpreter = project.interpreter(true, true);
     assert!(
         Command::new("mkfifo")
             .arg(project.root.join("pipe"))
