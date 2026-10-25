@@ -23,21 +23,37 @@ feature promise or a release announcement.
   execution budgets and normal function/error semantics.
 - Conservative opt-in AST name checking and exact declaration symbols, retaining
   default syntax-only checks and the UTF-8 JSON protocol.
+- Iterative destruction of runtime lists, objects, closures, scopes and modules,
+  including shared roots, cycle collection and error/cancellation cleanup.
+- Byte/work budgets for language formatting, with cancellation and deadline
+  checkpoints and complete-line validation before print output.
 - Deterministic generated-source tests and reproducible local benchmark tooling.
-- Extension 0.4.0 source support for current runtime APIs, raw strings, iteration,
-  optional name diagnostics and Outline symbols. Final package validation is
-  tracked separately below.
+- Extension 0.4.0 support for current runtime APIs, raw strings, iteration,
+  optional name diagnostics and Outline symbols. The matching VSIX passed 18
+  checks on both VS Code 1.85.2 and 1.143.1, including configuration refresh and
+  overlapping symbol requests; see the editor's HOST_VALIDATION.md.
 
-## Pending integration and artifact validation
+## Validated local artifacts
 
-- Finish editor integration and record the final source/test results.
-- Rebuild and test the final VSIX and terminal installer from matching sources.
-  Earlier validation records apply only to the artifacts and sources they name.
+- The 0.4.0 VSIX passed 77 unit tests, 8 real-interpreter integrations and 18
+  packaged checks on each of VS Code 1.85.2 and 1.143.1.
+- The 0.2.0 Windows installer bundles that VSIX and the validated runtime. Its
+  final archive, built from committed inputs, passed all 18 isolated extracted
+  scenarios plus 32 helper/file/build checks. No normal installation was changed.
+- CI passes local lint and its Windows checks are validated; remote Linux/macOS
+  jobs have not run. Final hashes and exact receipts are in
+  [OVERNIGHT_PROGRESS.md](OVERNIGHT_PROGRESS.md). Earlier validation records
+  apply only to the artifacts and sources they name.
+- Nine workloads now have a stable-runtime baseline against Lua and LuaJIT,
+  plus explicit GC phase samples; see [BENCHMARKS.md](BENCHMARKS.md). Solx is
+  slower on these measured workloads. Luau and portable memory measurements
+  remain unavailable, and no general speedup claim is supported.
 
 ## Remaining development
 
-- Broader native-operation/allocation/output budgets and iterative destruction
-  of deep runtime values; measure GC pauses and retained process memory.
+- Broader native-operation/allocation/output budgets; measure automatic GC
+  pauses and retained process memory. Iterative runtime teardown is implemented
+  but remains synchronous and requires temporary worklist storage.
 - Explicit interpolation and its escaping rules; grapheme APIs if needed.
 - Broader name/signature analysis, expression ranges, multiple error recovery,
   structured error causes/rethrow and deterministic resource cleanup.

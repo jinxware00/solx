@@ -53,9 +53,10 @@ the interactive console.
 
 The Windows installer includes an optional **Solx Language Support** extension
 for VS Code. Packages currently require a local build; no published release is
-claimed. Matching validation of the current runtime, extension 0.4.0 VSIX and
-installer is pending; earlier artifact reports apply to their recorded source
-versions. See [installation instructions](docs/INSTALLING.md), the
+claimed. The matching runtime 0.2.0, extension 0.4.0 VSIX and Windows installer
+have passed local validation, including isolated installation and two VS Code
+desktop versions. See the [validation record](docs/OVERNIGHT_PROGRESS.md),
+[installation instructions](docs/INSTALLING.md), the
 [extension guide](vscode-solx/README.md), and
 [development and packaging](docs/DEVELOPMENT.md).
 

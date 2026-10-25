@@ -12,9 +12,10 @@ budgets; [static analysis](ANALYSIS.md) adds optional name checks and
 declaration symbols. These changes do not establish performance or reliability
 superiority over Lua or Luau.
 
-The current source and its targeted checks are separate from release artifacts.
-Matching VSIX/installer validation is pending. Historical results below describe
-the original try/catch milestone, not validation of every current feature.
+The matching runtime, VSIX and installer have passed local Windows validation;
+see [the current record](OVERNIGHT_PROGRESS.md) for exact versions and receipts.
+Historical results below describe the original try/catch milestone, not
+validation of every current feature or support on other operating systems.
 
 ## Official Lua source reviewed
 

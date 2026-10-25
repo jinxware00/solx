@@ -1,0 +1,318 @@
+{
+  "schemaVersion": 1,
+  "status": "complete",
+  "sourceCommit": "2d9f46d99aca946af60608c8b085de8dfbd78a8b",
+  "runtimeSourceSha256": {
+    "Cargo.lock": "204a3ad034f5a3e6e03dcf4e7e8dc96d6621f93aea0a2a426f0deeed97a1a9dc",
+    "Cargo.toml": "5e5fc98b70bea008fcd7cb125fad7301d7449e282aa91358b852ac58df3fdb73",
+    "src/analysis.rs": "b61dc24099b1f4166bb0cbe4df9f298ee14eea6dc88d51be517b6e736e4848a0",
+    "src/check.rs": "b74423c2dd1de755b25f8a3a16037010ea00747babb6a271c6d3e031effb66c0",
+    "src/interpreter/collections.rs": "75cce30d715109f356c5837b45264be030e89370a1bd1f6f9fa6a037d03d9a53",
+    "src/interpreter/control.rs": "ea30a7d007d017b4588e9ab2526e0459f884582a36a4dc77ec91ff6969946de3",
+    "src/interpreter/eval.rs": "a3142d6295adea2a1bedf1cc6f1f9eb88ede66d347e37d8f9ac129c6d57c1b6c",
+    "src/interpreter/mod.rs": "8a01ddb24d14b3d923570b6da1f2c931f66ce9cc86c424562e73317a0dd20fb4",
+    "src/lexer/mod.rs": "6f06d92c77a7ad773c0da6076b378a331ccfbe175f6286f6179d2012febe2f32",
+    "src/lexer/token.rs": "44514f2d70a1a2c7332a95e466e69dc8d974488632d414856badf561144a65ba",
+    "src/lib.rs": "33aa60e252b6d0e99d9d46efa284e06bed790f51806d4f784842da20a4da4673",
+    "src/limits.rs": "8998e2244879c87d6847608ae22babcddb28d3c843621cf7e88e9ec52cc1485e",
+    "src/main.rs": "3910947ceb58116b4b92b9b0849c64dbdb45f4a7340a01e0154d28d642c23d35",
+    "src/modules.rs": "d4bc40a61782202c51d548f9768f444fdc6a8df14bb24101fe34ec9ce1a43e87",
+    "src/parser/ast.rs": "d7fb2c8f123d064f671a207c0fb0107ed658abe79c710e1b501d3f9317e3322a",
+    "src/parser/depth.rs": "311abd5a9ecfae3bf15578b204bc24f34000a4fc46aaf7130e9f2adce021ff0d",
+    "src/parser/mod.rs": "1a85bed8e7ef6bda713960269e28607aadc79c949043787259d16d6ca9a2cc5e",
+    "src/runtime/collection_ops.rs": "99e5472c2b933357e4584288c05abe5375fe6687ffa8bd61fdf8593947c37920",
+    "src/runtime/destruction.rs": "d02c5cc4866e4a89515fdd0b5143c96a2b961d6d02c8670ef1b62dc1ee6c1573",
+    "src/runtime/environment.rs": "8223a286a0b056a5bb623502fc28805a1529e06f822cbe483e7c3e859fe5d51a",
+    "src/runtime/error.rs": "b3bc752a71fb223a893f3d384591b84c35d69343d6ab8c35fa93442d1814cdea",
+    "src/runtime/gc.rs": "e8a11dc0142cbf859a4a7457eaaafc9b5b3ad68f8684693a43b43e5f5998eb41",
+    "src/runtime/mod.rs": "5fa5027b4cd96761a3b88b1fc434832bbb3e811d6baf6b40c70b8ed63551970c",
+    "src/runtime/numeric.rs": "98fa62caa5292f4a6c290bebb374cbc486bde6ff9efb9e83efe1eb571b2bc787",
+    "src/runtime/render.rs": "ad74772584f91d59c3f6c0983928fb00b5893c3627b26c87de3b08355c5de7dc",
+    "src/runtime/value.rs": "52791c24aea4e3ae2379d13f2184c1c4ecefd553ec369107e8e6fab8deec7353",
+    "src/stdlib/collections.rs": "7d1fe36d5d6f0c4ad43f929c63ba643e225a33e4bc8f6f5160d611f284bdf9d5",
+    "src/stdlib/core.rs": "94ecaeadb9a9a8d30dea6d327c2063d0f82fe7cb71168ad2e89b5256f799fca6",
+    "src/stdlib/json.rs": "6caf8012ef2eb1ee3ca6de9a5b7b933755188a22f9a09003396c085bd2a3805d",
+    "src/stdlib/math.rs": "837545b612c78c9e71c842f63cebd747441b44bfae3796200550b2f6421aa3e1",
+    "src/stdlib/mod.rs": "32f6e3dfcd94104f54ea71aa8b1ae4b1aad3ab5270e2f1d5ff457a9074d26eb4",
+    "src/stdlib/strings.rs": "7264d0368011835d088a9c51ca5d2ed3ea2989067a293c196d877e2945853655"
+  },
+  "exampleSourceSha256": "b0d05386bc3b11ebe76a862434f56148dccb5f73584296c3da1572be9e4a3c01",
+  "executableSha256": "480d392cfd1fc8d236dddd95daf16407dc5273ed7706331bfb38d3c03c928f76",
+  "environment": {
+    "os": {
+      "platform": "win32",
+      "release": "10.0.26200",
+      "version": "Windows 11 Home",
+      "architecture": "x64"
+    },
+    "cpu": {
+      "model": "11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz",
+      "logicalProcessors": 8
+    },
+    "memoryBytes": 8269426688,
+    "node": "v24.19.0",
+    "runtimeEnvironment": {
+      "policy": "Clear LUA_INIT/LUA_PATH/LUA_CPATH and all version-suffixed variants for runtime launches and version probes; inherit other variables without recording their values.",
+      "removedNames": [
+        "LUA_CPATH",
+        "LUA_PATH"
+      ],
+      "imports": "Lua/LuaJIT search only the helper fixture directory; Luau uses a relative helper path."
+    },
+    "rustc": {
+      "executable": "rustc",
+      "args": [
+        "--version"
+      ],
+      "elapsedNs": "455580600",
+      "elapsedMs": 455.5806,
+      "exitCode": 0,
+      "signal": null,
+      "error": null,
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "stdout": "rustc 1.99.0 (b940084d7 2026-09-28)\n",
+      "stderr": "warn: could not canonicalize path <user-profile>\n"
+    },
+    "cargo": {
+      "executable": "cargo",
+      "args": [
+        "--version"
+      ],
+      "elapsedNs": "126714800",
+      "elapsedMs": 126.7148,
+      "exitCode": 0,
+      "signal": null,
+      "error": null,
+      "stdoutTruncated": false,
+      "stderrTruncated": false,
+      "stdout": "cargo 1.99.0 (5f94df478 2026-08-27)\n",
+      "stderr": "warn: could not canonicalize path <user-profile>\n"
+    }
+  },
+  "build": {
+    "profileLabel": "release",
+    "command": "cargo build --release --locked --bin solx --example phase_profile -j 1",
+    "labelIsUserSupplied": true
+  },
+  "buildGuard": {
+    "schemaVersion": 1,
+    "status": "passed",
+    "startedAt": "2026-10-25T16:54:41.5351656Z",
+    "finishedAt": "2026-10-25T16:54:42.4269046Z",
+    "executable": "<user-profile>\\.cargo\\bin\\cargo.exe",
+    "arguments": [
+      "build",
+      "--release",
+      "--locked",
+      "--bin",
+      "solx",
+      "--example",
+      "phase_profile",
+      "-j",
+      "1"
+    ],
+    "workingDirectory": "<repository>",
+    "limits": {
+      "memoryMiB": 1024,
+      "timeoutSeconds": 180,
+      "maxProcesses": 24,
+      "maxLogMiBPerStream": 8
+    },
+    "result": {
+      "ExitCode": 0,
+      "CommandExitCode": 0,
+      "Status": "passed",
+      "ElapsedMilliseconds": 614,
+      "PeakJobMemoryBytes": 16670720,
+      "ConfiguredJobMemoryBytes": 1073741824,
+      "TotalProcesses": 3,
+      "RemainingProcessesAtCommandExit": 1,
+      "StandardOutputTruncated": false,
+      "StandardErrorTruncated": false
+    },
+    "error": null
+  },
+  "resourceGuard": {
+    "schemaVersion": 1,
+    "status": "passed",
+    "startedAt": "2026-10-25T17:03:29.6771134Z",
+    "finishedAt": "2026-10-25T17:03:30.7994392Z",
+    "executable": "<repository>\\target\\release\\examples\\phase_profile.exe",
+    "arguments": [],
+    "workingDirectory": "<repository>",
+    "limits": {
+      "memoryMiB": 512,
+      "timeoutSeconds": 60,
+      "maxProcesses": 12,
+      "maxLogMiBPerStream": 8
+    },
+    "result": {
+      "ExitCode": 0,
+      "CommandExitCode": 0,
+      "Status": "passed",
+      "ElapsedMilliseconds": 796,
+      "PeakJobMemoryBytes": 3506176,
+      "ConfiguredJobMemoryBytes": 536870912,
+      "TotalProcesses": 2,
+      "RemainingProcessesAtCommandExit": 0,
+      "StandardOutputTruncated": false,
+      "StandardErrorTruncated": false
+    },
+    "error": null
+  },
+  "guardSourceSha256": "9d4bd48afac3ea6e0b5aa55ec0dfd1f5af2fbb233fc95151a97a4369c893a09d",
+  "phases": {
+    "cyclic_graph_allocation": {
+      "maximum_ns": 1188700,
+      "median_ns": 1057400,
+      "p95_ns": 1154700,
+      "samples_ns": [
+        1110300,
+        1089000,
+        1026600,
+        1038300,
+        1055800,
+        1057400,
+        1052300,
+        1148400,
+        1050100,
+        1008600,
+        1069300,
+        1086700,
+        1188700,
+        1026100,
+        1154700,
+        1069800,
+        1066200,
+        1061100,
+        1028000,
+        1014700,
+        1024900
+      ]
+    },
+    "explicit_collection_pause": {
+      "maximum_ns": 1901500,
+      "median_ns": 1196700,
+      "p95_ns": 1735800,
+      "samples_ns": [
+        1176900,
+        1131800,
+        1165600,
+        1140800,
+        1447800,
+        1176100,
+        1179300,
+        1196700,
+        1125100,
+        1200400,
+        1258000,
+        1118800,
+        1220900,
+        1229900,
+        1901500,
+        1735800,
+        1272000,
+        1366200,
+        1463200,
+        1174800,
+        1175800
+      ]
+    },
+    "graphs_per_sample": 2000,
+    "limitations": [
+      "Execution includes automatic collection and AST validation, excludes interpreter construction/destruction.",
+      "Allocation timings create one self-cyclic list per graph; these are graph counts, not allocator calls or bytes.",
+      "Collection samples measure full synchronous explicit passes, not all automatic GC pauses.",
+      "Peak process memory requires an external OS measurement; Rust does not expose portable RSS."
+    ],
+    "parse": {
+      "maximum_ns": 49600,
+      "median_ns": 32600,
+      "p95_ns": 46600,
+      "samples_ns": [
+        45400,
+        42300,
+        32600,
+        46300,
+        30500,
+        46600,
+        41300,
+        49600,
+        37200,
+        32700,
+        23800,
+        17100,
+        29200,
+        16700,
+        17700,
+        23700,
+        41700,
+        28700,
+        18600,
+        46200,
+        27700
+      ]
+    },
+    "preparsed_execution": {
+      "maximum_ns": 21032600,
+      "median_ns": 16697700,
+      "p95_ns": 18996300,
+      "samples_ns": [
+        16689900,
+        16723900,
+        16491100,
+        16568000,
+        16693900,
+        17473500,
+        16697200,
+        18996300,
+        17031300,
+        17031600,
+        16659300,
+        17034900,
+        16697700,
+        16571100,
+        17243500,
+        16734700,
+        21032600,
+        18184400,
+        16650200,
+        16485100,
+        16352400
+      ]
+    },
+    "reclaimed_nodes": [
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000,
+      2000
+    ],
+    "samples": 21,
+    "schemaVersion": 1,
+    "source": "global sum = 0 for i = 1, 10000 do sum = sum + i end",
+    "warmups": 2
+  },
+  "pathRedaction": {
+    "policy": "Case-insensitive repository and user-profile path prefixes replaced in strings and keys; measurements and hashes unchanged.",
+    "sourceFile": "target/validation/continue-phase-profile/stdout.log",
+    "rawSha256": "051f0e0057d3afdfb2b23dc16759d6ead857088ed5f8548962f66107d923ab7a"
+  }
+}

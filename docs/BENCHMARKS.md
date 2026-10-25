@@ -64,8 +64,8 @@ access the network. All cases still include the runtime's initial source reads.
 The current manifest has nine cases. With `S` samples, `W` warmups, and `E`
 engines, the workload portion runs `9 * (S + W) * E` processes, in addition to
 version and repository probes. Seven samples and two warmups mean 81 workload
-launches per engine. The four newer cases have source fixtures and expected
-checksums; the historical timing table below contains only the original five.
+launches per engine. The October 25 baseline below covers all nine cases;
+the historical October 23 table contains only the original five.
 
 ## Timing and interpretation
 
@@ -164,8 +164,8 @@ The example emits phase results rather than a complete provenance record. Keep
 the command, toolchain/build profile, Git revision and source state, example
 source hash, executable hash, OS details, and resource-guard receipt with its
 JSON output. Preserve the exact code and constants for repeated measurements;
-changing graph size or source creates a different workload. No new phase timing
-results are recorded in this document yet.
+changing graph size or source creates a different workload. The October 25
+phase results below retain their provenance and all measured samples.
 
 The Windows guard's `PeakJobMemoryBytes` is the OS **peak committed job memory**
 counter. It is not process RSS, allocator-requested bytes, a measurement of
@@ -237,6 +237,65 @@ SHA-256. Timings and source/binary/fixture hashes are preserved. Raw local runs
 under `benchmarks/results/` are ignored by Git; substitute local executable paths
 for the baseline's placeholders when reproducing its invocation.
 
+## Stable runtime baseline - 2026-10-25
+
+The [process baseline](../benchmarks/baselines/2026-10-25-release-stable.json)
+records commit `2d9f46d99aca946af60608c8b085de8dfbd78a8b`, with committed runtime
+and benchmark sources. Separate installer, documentation and preserved asset
+work was present; the full worktree status is retained. Runtime, binary, harness,
+manifest and fixture hashes were unchanged. The run lasted from 17:02:01 to
+17:02:58 UTC on the same Windows/i5-1135G7 host, using Rust/Cargo 1.99.0, Node
+24.19.0, Lua 5.4.6 and LuaJIT 2.1.1720049189. Luau was not available.
+
+All 621 launches passed output/checksum validation: nine cases, three engines,
+21 measured launches and two warmups per case/engine. Builds and desktop tests
+were stopped during measurement. The guard used a 512 MiB committed job cap,
+180-second timeout, and at most 12 concurrent descendants. Its peak job counter
+was 76,734,464 bytes, including the harness; this is not per-engine RSS. Raw
+trials, source/binary hashes and the guard receipt are retained, with private
+path prefixes redacted and the original local report's SHA-256 recorded.
+
+Values are **median / p95 process wall time in milliseconds**:
+
+| Case | Solx 0.2.0 release | Lua 5.4.6 | LuaJIT 2.1.1720049189 |
+| --- | --- | --- | --- |
+| Startup | 65.25 / 76.34 | 36.97 / 44.00 | 40.09 / 55.28 |
+| Arithmetic | 143.78 / 164.84 | 35.62 / 46.19 | 38.78 / 49.98 |
+| Calls | 128.88 / 238.67 | 39.83 / 65.42 | 42.88 / 50.75 |
+| Strings | 89.80 / 111.32 | 39.59 / 56.36 | 42.38 / 60.84 |
+| Collections | 99.99 / 131.12 | 48.53 / 53.72 | 49.99 / 60.14 |
+| Closures | 128.38 / 173.28 | 43.56 / 102.90 | 44.77 / 86.36 |
+| Control | 104.36 / 135.10 | 36.18 / 43.72 | 42.62 / 49.56 |
+| Allocation | 115.22 / 146.35 | 40.06 / 44.35 | 39.19 / 46.61 |
+| Imports | 579.28 / 732.93 | 40.59 / 68.93 | 47.02 / 51.26 |
+
+Solx has higher medians in all nine cases. Imports have the largest measured
+Solx time and gap, making path resolution, cache lookup and module-call scope
+work useful next profiling targets. This combined workload does not determine
+which component dominates. Startup remains included and is never subtracted;
+these short process measurements do not isolate steady-state execution or JIT
+behavior. The two dated runs are not a controlled optimization comparison.
+
+The [phase record](../benchmarks/baselines/2026-10-25-phase-profile.json) retains
+21 samples after two warmups from the same runtime revision, with example and
+binary hashes, build receipt, machine/toolchain data and a separate 512 MiB
+guard receipt. All execution sums matched and every explicit pass reclaimed
+exactly 2,000 nodes, restoring the initial retained count.
+
+| Phase | Median ms | p95 ms |
+| --- | --- | --- |
+| Parse sum-loop source | 0.033 | 0.047 |
+| Preparsed execution | 16.698 | 18.996 |
+| Construct 2,000 self-cyclic lists | 1.057 | 1.155 |
+| Explicit collection of those lists | 1.197 | 1.736 |
+
+Execution dominates parsing in this particular sum-loop fixture. Its timing
+includes AST validation, scopes and automatic collection; it does not isolate
+evaluator instructions. The explicit collection distribution covers only this
+graph shape, not all automatic pauses or retained/shared graphs. Node counts
+are not allocator byte measurements, and neither result establishes a general
+memory or latency bound.
+
 ## Remaining measurement work
 
 A read-only code audit identifies work to measure before changing the runtime:
@@ -256,10 +315,9 @@ A read-only code audit identifies work to measure before changing the runtime:
   performs another. The process harness includes both; it cannot identify their
   contribution separately from source parsing, environment work, or OS startup.
 
-The phase runner above supplies parsing, pre-parsed execution, isolated cyclic
-allocation, and explicit collection timing paths. The next measurement is to
-record its actual output and the expanded process workload results from stable,
-validated sources. Broader allocation/scope counters and automatic collection
+The phase runner above supplies measured parsing, pre-parsed execution, isolated
+cyclic allocation, and explicit collection timings alongside the expanded
+process workloads. Broader allocation/scope counters and automatic collection
 pause distributions remain unimplemented; add those only with clear counting
 rules and bounded fixtures. Extend phase coverage to callback-heavy loops and
 retained/shared graphs before generalizing from isolated self-cycles. Reuse the

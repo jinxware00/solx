@@ -123,10 +123,13 @@ are in [the extension README](../vscode-solx/README.md). Name checks are optiona
 and conservative; neither mode is a type checker or execution sandbox. Outline
 symbols are declaration data, without rename/navigation or a debugger protocol.
 
-Matching validation of the current runtime, extension 0.4.0 VSIX and installer
-is pending. Earlier package reports apply to their recorded source versions;
-they do not validate new flags or providers. Rebuild the interpreter to use this
-CLI. No Marketplace publication or normal-profile installation is implied.
+The matching runtime 0.2.0, extension 0.4.0 VSIX and installer have passed local
+Windows validation. Packaged checks passed on VS Code 1.85.2 and 1.143.1,
+including optional name diagnostics and Outline disable/re-enable without a
+document edit. See [the current record](OVERNIGHT_PROGRESS.md) for receipts.
+Earlier package reports apply only to their recorded source versions. Rebuild
+the interpreter to use this CLI. No Marketplace publication or normal-profile
+installation is implied.
 
 ### Windows buffer transport
 

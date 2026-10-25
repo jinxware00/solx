@@ -1,5 +1,22 @@
 # Repository and terminal installer validation
 
+## Current validated milestone - 2026-10-25
+
+Runtime 0.2.0, extension 0.4.0, and the complete Windows bundle now have matching
+local validation. The unchanged runtime passed 421 Rust tests, formatting and
+strict Clippy on October 24. Extension validation passed 77 units, 8 interpreter
+integrations and 18 packaged checks on each of VS Code 1.85.2 and 1.143.1.
+October 25 checks passed 32 installer helper/file/build assertions, 18 final
+extracted-bundle scenarios, 11 resource-guard probes, and Actionlint. Benchmarks
+retain 621 validated launches and 21 phase samples.
+
+See [the progress record](OVERNIGHT_PROGRESS.md) for current artifact hashes,
+source commits, exact receipts and remaining environment-specific checks. The
+following older report is retained as historical evidence; its versions and
+test counts are not the current package.
+
+## Historical validation - 2026-10-23
+
 Validation date: 2026-10-23, Windows x64, Windows PowerShell 5.1, Node.js 24.19.0.
 
 ## Completed work
