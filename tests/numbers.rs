@@ -53,9 +53,11 @@ fn overflow_zero_division_and_nonfinite_results_are_errors() {
         ("1e-999", "underflow"),
         ("1e-300 * 1e-300", "underflow"),
         ("1e-300 / 1e300", "underflow"),
-        ("2 ^ -1075", "underflow"),
+        // powf precision depends on the platform math library. Avoid the
+        // halfway case at 2^-1075, which some libraries round up to 2^-1074.
+        ("2 ^ -1076", "underflow"),
     ] {
-        let error = evaluate(source).unwrap_err();
+        let error = evaluate(source).expect_err(source);
         assert!(
             error.message.contains(fragment),
             "{source}: {}",
@@ -81,6 +83,7 @@ fn mixed_arithmetic_requires_exact_integer_conversion() {
         ("1 + 0.5", 1.5),
         ("9007199254740992 + 0.0", 9_007_199_254_740_992.0),
         ("1e-300 * 0.0", 0.0),
+        ("2 ^ -1074", f64::from_bits(1)),
     ] {
         assert_eq!(evaluate(source).unwrap(), Value::Number(expected));
     }
