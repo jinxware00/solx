@@ -8,12 +8,12 @@ schema-v2 provenance include the extension name, publisher and version.
 Installer and test paths derive from that validated identity. Uninstall accepts
 only current and legacy Solx package names for compatibility with older records.
 
-The renamed VSIX passed all 18 packaged checks on VS Code 1.85.2. Current
-installer fixture execution, the clean release bundle build and extracted
-installation tests are deferred to hosted CI. Earlier results below do not
-validate these updated installer bytes.
+The current installer, release fixtures, clean bundle build and all 18 extracted
+installation cases passed in [CI run 40221522191](https://github.com/jinxware00/solx/actions/runs/40221522191)
+for commit `4073713`. The renamed VSIX passed all 18 packaged checks on both
+VS Code 1.85.2 and 1.143.1. The historical results below describe earlier bytes.
 
-| Suite | Required checks |
+| Suite | Passed checks |
 | --- | ---: |
 | CLI helper, quoting, timeout and inherited-pipe handling | 13 |
 | File/PATH transformations, checksums, identity and rollback | 7 |

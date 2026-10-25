@@ -8,9 +8,9 @@ feature promise or a release announcement.
 
 - Windows extension checker startup workaround and normal-shutdown cleanup
   (extension 0.3.1, locally packaged and desktop tested).
-- CI definition for Windows, Linux and macOS, plus installer source/VSIX
-  consistency, provenance and archive preservation. Local fixture tests pass;
-  the remote workflow has not run yet.
+- CI for Windows, Linux and macOS, plus installer source/VSIX consistency,
+  provenance and archive preservation. All three hosted jobs have passed;
+  see [VALIDATION.md](VALIDATION.md) for the tested commit.
 - Storable nil with lexical scope preservation and migration guidance.
 - Exact i64 integers, checked arithmetic and exact mixed numeric comparisons.
 - Bounded JSON parsing/serialization with deterministic keys and Unicode support.
@@ -34,11 +34,11 @@ feature promise or a release announcement.
 
 ## Validated local artifacts
 
-- The renamed 0.1.0 VSIX passed 77 unit tests and 18 packaged checks on VS Code
-  1.85.2. The earlier extension identity passed 8 real-interpreter integrations
-  and 18 checks on VS Code 1.143.1; those are historical results.
+- The renamed 0.1.0 VSIX passed 77 unit tests, 8 real-interpreter integrations
+  and 18 packaged checks on both VS Code 1.85.2 and 1.143.1 in hosted CI.
 - The Windows installer now bundles `solx-ls` and records its identity in build
-  metadata. Fresh fixture and extracted-installation checks run in release CI.
+  metadata. All 34 helper/file/build checks, 14 release-preparation checks and
+  18 extracted-installation scenarios passed in hosted CI.
 - Release CI requires all three operating systems and both Windows desktop
   versions before publication. Adding this workflow does not establish a
   successful remote run. Current evidence and limitations are in

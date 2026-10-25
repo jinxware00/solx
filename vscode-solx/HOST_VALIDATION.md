@@ -1,5 +1,13 @@
 # Packaged editor validation
 
+## Hosted compatibility validation - 2026-10-25
+
+[CI run 40221522191](https://github.com/jinxware00/solx/actions/runs/40221522191)
+passed for commit `4073713`. The freshly built `solx-ls` 0.1.0 package passed
+all 18 Windows desktop checks on **both VS Code 1.85.2 and 1.143.1**. All three
+operating-system jobs passed extension units, real-interpreter integration and
+packaging. These hosted results supplement the separate local receipts below.
+
 ## Sol Language Support 0.1.0 - 2026-10-25
 
 Extension identity: `jinxware00.solx-ls`. Display name: **Sol Language Support**.
@@ -26,8 +34,8 @@ under a 1,536 MiB cap. Repeated warm syntax checks took 1,751 / 1,752 / 1,757 ms
 These are observed timings, not a general performance guarantee.
 
 The subsequent local VS Code 1.143.1 attempt was interrupted by a host restart
-and has no completed result. It is not a pass. Additional desktop execution is
-deferred to hosted CI, which requires both pinned versions before publication.
+and has no completed result. It is not a pass. Additional desktop execution
+was moved to hosted CI, whose successful results are recorded above.
 
 ## Coverage
 

@@ -4,6 +4,22 @@ The release pairs runtime **0.2.0** with **Sol Language Support**,
 `jinxware00.solx-ls` **0.1.0**. Test results below distinguish the current package
 from earlier artifacts. Generated packages, profiles and logs remain ignored.
 
+## Hosted validation - 2026-10-25
+
+[CI run 40221522191](https://github.com/jinxware00/solx/actions/runs/40221522191)
+passed on **Windows 2022, Ubuntu 24.04 and macOS 14** for commit `4073713`.
+All three jobs passed Rust formatting, tests and strict Clippy, extension units,
+real-interpreter integration and packaging. Windows additionally passed all
+18 packaged checks on each of VS Code 1.85.2 and 1.143.1, 11 resource-guard
+assertions, 34 installer helper/file/build checks, 14 release-preparation checks,
+the clean bundle build and all 18 extracted installation/uninstallation cases.
+
+Hosted validation corrected a platform-dependent floating-point test boundary,
+PowerShell exit-code propagation and npm lockfile parsing, Windows ZIP entry
+separators, and redirected installer input with a byte-order marker. The runtime
+implementation was unchanged. Final publication still requires the tagged
+release workflow and its artifact verification to succeed.
+
 ## Current local evidence - 2026-10-25
 
 | Check | Result | Evidence |
@@ -11,8 +27,8 @@ from earlier artifacts. Generated packages, profiles and logs remain ignored.
 | Extension packaging and unit tests | 77 passed; new VSIX created | `target/validation/release-ls-package/` |
 | Packaged VS Code 1.85.2 | 18 passed; zero snapshots remaining | `target/validation/release-ls-host-1852/` |
 | Packaged VS Code 1.143.1 | Interrupted; no completed result | Fresh check required in CI |
-| Renamed installer and release fixtures | Pending hosted validation | Required by CI |
-| Final Windows bundle and extracted installation tests | Pending hosted build and validation | Required by CI |
+| Renamed installer and release fixtures | Passed on hosted Windows | CI run linked above |
+| Final Windows bundle and extracted installation tests | Passed on hosted Windows | CI run linked above |
 
 The new VSIX is `vscode-solx/solx-ls-0.1.0.vsix`, 113,047 bytes, SHA-256
 `1e1b5e107621b7a05b3ded0bb0bfcce43d49f6a89b60595ad86bfd800e307460`.
@@ -20,7 +36,7 @@ See [editor validation](../vscode-solx/HOST_VALIDATION.md) for coverage and
 [installer validation](../installer/windows/VALIDATION.md) for installer cases.
 
 The local desktop attempt was interrupted by a host restart. Further executable
-workloads are deferred to GitHub runners. A new release must pass the full
+workloads were moved to GitHub runners. A new release must pass the full
 [CI workflow](CI.md); local historical receipts do not substitute for those
 checks. Publication requires Windows, Linux and macOS jobs, both pinned Windows
 VS Code versions, and the extracted installer scenarios to succeed.
