@@ -1,3 +1,13 @@
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/jinxware00/solx/refs/heads/main/assets/logowtext.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/jinxware00/solx/refs/heads/main/assets/logowtext.svg">
+    <img alt="Solx Programming Languae"
+         src="https://raw.githubusercontent.com/jinxware00/solx/refs/heads/main/assets/logowtext.svg"
+         width="50%">
+  </picture>
+</div>
+
 # Solx
 
 <img src="assets/logo.png" alt="Solx" width="120">
